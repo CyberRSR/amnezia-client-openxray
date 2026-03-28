@@ -42,6 +42,7 @@ private:
 
     DockerContainer m_container;
     QJsonObject m_content;
+    QStringList m_protocolKeys;
 };
 
 #endif // PROTOCOLS_MODEL_H

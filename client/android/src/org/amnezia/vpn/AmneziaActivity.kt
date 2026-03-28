@@ -86,6 +86,7 @@ class AmneziaActivity : QtActivity() {
     private var isWaitingStatus = true
     private var isServiceConnected = false
     private var isInBoundState = false
+    private var pendingDisconnect = false
     private var notificationStateReceiver: BroadcastReceiver? = null
     private lateinit var vpnServiceMessenger: IpcMessenger
     private var pfd: ParcelFileDescriptor? = null
@@ -106,16 +107,20 @@ class AmneziaActivity : QtActivity() {
                 Log.d(TAG, "Handle event: $event")
                 when (event) {
                     ServiceEvent.STATUS_CHANGED -> {
-                        msg.data?.getStatus()?.let { (state) ->
-                            Log.d(TAG, "Handle protocol state: $state")
-                            QtAndroidController.onVpnStateChanged(state.ordinal)
+                        msg.data?.getStatus()?.let { status ->
+                            Log.d(TAG, "Handle protocol state: ${status.state}")
+                            QtAndroidController.onVpnStateChanged(status.state.ordinal)
+                            QtAndroidController.onConnectionProgressChanged(status.toJsonString())
                         }
                     }
 
                     ServiceEvent.STATUS -> {
                         if (isWaitingStatus) {
                             isWaitingStatus = false
-                            msg.data?.getStatus()?.let { QtAndroidController.onStatus(it) }
+                            msg.data?.getStatus()?.let {
+                                QtAndroidController.onStatus(it)
+                                QtAndroidController.onConnectionProgressChanged(it.toJsonString())
+                            }
                         }
                     }
 
@@ -157,6 +162,10 @@ class AmneziaActivity : QtActivity() {
                 isServiceConnected = true
                 if (isWaitingStatus) {
                     vpnServiceMessenger.send(Action.REQUEST_STATUS, replyTo = activityMessenger)
+                }
+                if (pendingDisconnect) {
+                    pendingDisconnect = false
+                    disconnectFromVpn()
                 }
             }
 
@@ -533,7 +542,7 @@ class AmneziaActivity : QtActivity() {
         Log.d(TAG, "Bind service")
         vpnProto?.let { proto ->
             Intent(this, proto.serviceClass).also {
-                bindService(it, serviceConnection, BIND_ABOVE_CLIENT and BIND_AUTO_CREATE)
+                bindService(it, serviceConnection, BIND_ABOVE_CLIENT or BIND_AUTO_CREATE)
             }
             isInBoundState = true
         }
@@ -682,6 +691,13 @@ class AmneziaActivity : QtActivity() {
     @MainThread
     private fun disconnectFromVpn() {
         Log.d(TAG, "Disconnect from VPN")
+        if (!isServiceConnected) {
+            pendingDisconnect = true
+            if (!isInBoundState) {
+                doBindService()
+            }
+            return
+        }
         vpnServiceMessenger.send(Action.DISCONNECT)
     }
 

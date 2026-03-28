@@ -7,6 +7,7 @@
 #if defined(Q_OS_WINDOWS) || defined(Q_OS_MACX) and !defined MACOS_NE || (defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID))
     #include "openvpnovercloakprotocol.h"
     #include "openvpnprotocol.h"
+    #include "oxrayprotocol.h"
     #include "shadowsocksvpnprotocol.h"
     #include "wireguardprotocol.h"
     #include "xrayprotocol.h"
@@ -122,6 +123,7 @@ VpnProtocol *VpnProtocol::factory(DockerContainer container, const QJsonObject &
     case DockerContainer::Awg2: return new WireguardProtocol(configuration);
     case DockerContainer::Awg: return new WireguardProtocol(configuration);
     case DockerContainer::Xray: return new XrayProtocol(configuration);
+    case DockerContainer::OXray: return new OxrayProtocol(configuration);
     case DockerContainer::SSXray: return new XrayProtocol(configuration);
 #endif
     default: return nullptr;

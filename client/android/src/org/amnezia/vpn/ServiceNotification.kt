@@ -12,11 +12,16 @@ import android.os.Build
 import androidx.core.app.NotificationChannelCompat.Builder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.Action
+import androidx.core.app.NotificationCompat.InboxStyle
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import org.amnezia.vpn.protocol.ProtocolState
 import org.amnezia.vpn.protocol.ProtocolState.CONNECTED
 import org.amnezia.vpn.protocol.ProtocolState.DISCONNECTED
+import org.amnezia.vpn.protocol.Status
+import org.amnezia.vpn.protocol.StatusStep
+import org.amnezia.vpn.protocol.StatusStepState
 import org.amnezia.vpn.util.Log
 import org.amnezia.vpn.util.net.TrafficStats.TrafficData
 
@@ -31,6 +36,10 @@ private const val CONNECT_REQUEST_CODE = 1
 private const val DISCONNECT_REQUEST_CODE = 2
 
 class ServiceNotification(private val context: Context) {
+
+    private var currentServerName: String? = null
+    private var currentProtocol: String? = null
+    private var currentStatus: Status = Status.build { setState(DISCONNECTED) }
 
     private val upDownSymbols = when (Build.BRAND) {
         "Infinix" -> '˅' to '˄'
@@ -59,20 +68,27 @@ class ServiceNotification(private val context: Context) {
         formatSpeedString(rxString, txString)
     }
 
-    fun buildNotification(serverName: String?, protocol: String?, state: ProtocolState): Notification {
-        val speedString = if (state == CONNECTED) zeroSpeed else null
+    fun buildNotification(serverName: String?, protocol: String?, status: Status): Notification {
+        val speedString = if (status.state == CONNECTED) zeroSpeed else null
+        currentServerName = serverName
+        currentProtocol = protocol
+        currentStatus = status
 
-        Log.v(TAG, "Build notification: $serverName, $state")
+        Log.v(TAG, "Build notification: $serverName, ${status.state}")
 
         return notificationBuilder
             .setSmallIcon(R.drawable.ic_amnezia_round)
+            .setLargeIcon(ContextCompat.getDrawable(context, R.drawable.ic_amnezia_round)?.toBitmap())
             .setContentTitle((serverName ?: "AmneziaVPN") + (protocol?.let { " $it" } ?: ""))
-            .setContentText(context.getString(state))
+            .setContentText(status.message.ifBlank { context.getString(status.state) })
             .setSubText(speedString)
             .setWhen(System.currentTimeMillis())
+            .setColor(0xFFFFD54F.toInt())
+            .setColorized(status.state == CONNECTED)
             .clearActions()
             .apply {
-                getAction(state)?.let {
+                buildStatusStyle(status)?.let(::setStyle)
+                getAction(status.state)?.let {
                     addAction(it)
                 }
             }
@@ -80,10 +96,47 @@ class ServiceNotification(private val context: Context) {
     }
 
     private fun buildNotification(speed: TrafficData): Notification =
-        notificationBuilder
-            .setWhen(System.currentTimeMillis())
-            .setSubText(getSpeedString(speed))
-            .build()
+        buildNotification(currentServerName, currentProtocol, currentStatus).let {
+            notificationBuilder
+                .setWhen(System.currentTimeMillis())
+                .setSubText(getSpeedString(speed))
+                .apply {
+                    buildStatusStyle(currentStatus)?.let(::setStyle)
+                }
+                .build()
+        }
+
+    private fun buildStatusStyle(status: Status): InboxStyle? {
+        if (status.steps.isEmpty()) {
+            return null
+        }
+
+        return InboxStyle().also { style ->
+            status.steps.forEach { step ->
+                style.addLine(formatStep(step))
+            }
+        }
+    }
+
+    private fun formatStep(step: StatusStep): String {
+        val prefix = when (step.state) {
+            StatusStepState.SUCCESS -> "[OK]"
+            StatusStepState.FAILURE -> "[X]"
+            StatusStepState.ACTIVE -> "[...]"
+            StatusStepState.PENDING -> "[ ]"
+        }
+        return "$prefix ${labelForStep(step.key)}"
+    }
+
+    private fun labelForStep(stepKey: String): String =
+        when (stepKey) {
+            "openvpn" -> "OpenVPN"
+            "xray" -> "Xray"
+            "readmcu" -> "readmcu.com"
+            "speedtest" -> "speedtest.net"
+            "healthcheck" -> "health check"
+            else -> stepKey
+        }
 
     fun isNotificationEnabled(): Boolean {
         if (!context.isNotificationPermissionGranted()) return false
@@ -94,10 +147,10 @@ class ServiceNotification(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun updateNotification(serverName: String?, protocol: String?, state: ProtocolState) {
+    fun updateNotification(serverName: String?, protocol: String?, status: Status) {
         if (context.isNotificationPermissionGranted()) {
-            Log.v(TAG, "Update notification: $serverName, $state")
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(serverName, protocol, state))
+            Log.v(TAG, "Update notification: $serverName, ${status.state}")
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(serverName, protocol, status))
         }
     }
 

@@ -26,12 +26,19 @@ abstract class Protocol {
     protected lateinit var context: Context
     protected lateinit var state: MutableStateFlow<ProtocolState>
     protected lateinit var onError: (String) -> Unit
+    protected var onStatusChanged: (Status) -> Unit = {}
     protected var isInitialized: Boolean = false
 
-    fun initialize(context: Context, state: MutableStateFlow<ProtocolState>, onError: (String) -> Unit) {
+    fun initialize(
+        context: Context,
+        state: MutableStateFlow<ProtocolState>,
+        onError: (String) -> Unit,
+        onStatusChanged: (Status) -> Unit = {}
+    ) {
         this.context = context
         this.state = state
         this.onError = onError
+        this.onStatusChanged = onStatusChanged
         internalInit()
         isInitialized = true
     }
@@ -43,6 +50,12 @@ abstract class Protocol {
     abstract fun stopVpn()
 
     abstract fun reconnectVpn(vpnBuilder: Builder, protect: (Int) -> Boolean)
+
+    open fun requestConnectionCheck(reason: String) = Unit
+
+    protected fun emitStatus(status: Status) {
+        onStatusChanged(status)
+    }
 
     protected fun ProtocolConfig.Builder.configSplitTunneling(config: JSONObject) {
         if (!allowSplitTunneling) {

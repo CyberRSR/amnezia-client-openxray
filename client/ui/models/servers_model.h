@@ -140,6 +140,10 @@ public slots:
 
     void toggleAmneziaDns(bool enabled);
     QPair<QString, QString> getDnsPair(const int serverIndex);
+    bool isProcessedServerCustomDnsEnabled();
+    QString processedServerPrimaryDns();
+    QString processedServerSecondaryDns();
+    void updateProcessedServerDns(bool enabled, const QString &primaryDns, const QString &secondaryDns);
 
     bool isServerFromApiAlreadyExists(const quint16 crc);
     bool isServerFromApiAlreadyExists(const QString &userCountryCode, const QString &serviceType, const QString &serviceProtocol);

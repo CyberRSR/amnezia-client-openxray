@@ -1,6 +1,9 @@
 #ifndef CONNECTIONCONTROLLER_H
 #define CONNECTIONCONTROLLER_H
 
+#include <QJsonArray>
+#include <QVariantList>
+
 #include "protocols/vpnprotocol.h"
 #include "ui/models/clientManagementModel.h"
 #include "ui/models/containers_model.h"
@@ -15,6 +18,8 @@ public:
     Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectionStateChanged)
     Q_PROPERTY(bool isConnectionInProgress READ isConnectionInProgress NOTIFY connectionStateChanged)
     Q_PROPERTY(QString connectionStateText READ connectionStateText NOTIFY connectionStateChanged)
+    Q_PROPERTY(QString connectionProgressStatusText READ connectionProgressStatusText NOTIFY connectionStateChanged)
+    Q_PROPERTY(QVariantList connectionProgressItems READ connectionProgressItems NOTIFY connectionStateChanged)
 
     explicit ConnectionController(const QSharedPointer<ServersModel> &serversModel, const QSharedPointer<ContainersModel> &containersModel,
                                   const QSharedPointer<ClientManagementModel> &clientManagementModel,
@@ -26,6 +31,8 @@ public:
     bool isConnected() const;
     bool isConnectionInProgress() const;
     QString connectionStateText() const;
+    QString connectionProgressStatusText() const;
+    QVariantList connectionProgressItems() const;
 
 public slots:
     void toggleConnection();
@@ -35,6 +42,7 @@ public slots:
 
     ErrorCode getLastConnectionError();
     void onConnectionStateChanged(Vpn::ConnectionState state);
+    void onConnectionProgressChanged(const QString &json);
 
     void onCurrentContainerUpdated();
 
@@ -54,6 +62,7 @@ signals:
 
 private:
     Vpn::ConnectionState getCurrentConnectionState();
+    QString translatedProgressLabel(const QString &key) const;
 
     void continueConnection();
 
@@ -68,6 +77,8 @@ private:
     bool m_isConnected = false;
     bool m_isConnectionInProgress = false;
     QString m_connectionStateText = tr("Connect");
+    QString m_connectionProgressStatusText;
+    QJsonArray m_connectionProgress;
 
     Vpn::ConnectionState m_state;
 };

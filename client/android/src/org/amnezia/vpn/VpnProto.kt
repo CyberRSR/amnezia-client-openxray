@@ -5,6 +5,7 @@ import org.amnezia.vpn.protocol.awg.Awg
 import org.amnezia.vpn.protocol.cloak.Cloak
 import org.amnezia.vpn.protocol.openvpn.OpenVpn
 import org.amnezia.vpn.protocol.wireguard.Wireguard
+import org.amnezia.vpn.protocol.xray.Oxray
 import org.amnezia.vpn.protocol.xray.Xray
 
 enum class VpnProto(
@@ -42,6 +43,14 @@ enum class VpnProto(
         OpenVpnService::class.java
     ) {
         override fun createProtocol(): Protocol = Cloak()
+    },
+
+    OXRAY(
+        "OXray",
+        "org.amnezia.vpn:amneziaOxrayService",
+        OxrayService::class.java
+    ) {
+        override fun createProtocol(): Protocol = Oxray()
     },
 
     XRAY(

@@ -18,12 +18,13 @@ import org.amnezia.vpn.protocol.ProtocolState.DISCONNECTED
 import org.amnezia.vpn.protocol.ProtocolState.RECONNECTING
 import org.amnezia.vpn.util.Log
 import org.amnezia.vpn.util.net.InetNetwork
+import org.amnezia.vpn.util.net.ip
 import org.amnezia.vpn.util.net.parseInetAddress
 
 private const val TAG = "OpenVpnClient"
 private const val EMULATED_EXCLUDE_ROUTES = (1 shl 16)
 
-class OpenVpnClient(
+open class OpenVpnClient(
     private val configBuilder: OpenVpnConfig.Builder,
     private val state: MutableStateFlow<ProtocolState>,
     private val getLocalNetworks: (Boolean) -> List<InetNetwork>,
@@ -31,6 +32,17 @@ class OpenVpnClient(
     private val protect: (Int) -> Boolean,
     private val onError: (String) -> Unit
 ) : ClientAPI_OpenVPNClient() {
+
+    var tunnelLocalAddress: String? = null
+        private set
+
+    var tunnelServerAddress: String? = null
+        private set
+
+    val tunnelDnsServers: List<String>
+        get() = pushedDnsServers.toList()
+
+    private val pushedDnsServers = linkedSetOf<String>()
 
     /**************************************************************************
      * Tun builder callbacks
@@ -54,6 +66,9 @@ class OpenVpnClient(
     override fun tun_builder_new(): Boolean {
         Log.d(TAG, "tun_builder_new")
         configBuilder.clearAddresses()
+        tunnelLocalAddress = null
+        tunnelServerAddress = null
+        pushedDnsServers.clear()
         return true
     }
 
@@ -72,6 +87,11 @@ class OpenVpnClient(
         gateway: String, ipv6: Boolean, net30: Boolean
     ): Boolean {
         Log.d(TAG, "tun_builder_add_address: $address, $prefix_length, $gateway, $ipv6, $net30")
+        tunnelLocalAddress = address
+        if (gateway.isNotBlank() && (tunnelServerAddress.isNullOrBlank() || (!ipv6 && tunnelServerAddress?.contains(':') == true))) {
+            tunnelServerAddress = gateway
+            Log.i(TAG, "Captured OpenVPN tunnel server address: $gateway")
+        }
         configBuilder.addAddress(InetNetwork(address, prefix_length))
         return true
     }
@@ -103,7 +123,9 @@ class OpenVpnClient(
     // Guaranteed to be called after tun_builder_reroute_gw.
     override fun tun_builder_add_dns_server(address: String, ipv6: Boolean): Boolean {
         Log.d(TAG, "tun_builder_add_dns_server: $address, $ipv6")
-        configBuilder.addDnsServer(parseInetAddress(address))
+        val parsedAddress = parseInetAddress(address)
+        configBuilder.addDnsServer(parsedAddress)
+        pushedDnsServers += parsedAddress.ip
         return true
     }
 

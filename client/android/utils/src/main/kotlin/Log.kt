@@ -8,7 +8,6 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.ZonedDateTime
 import java.time.ZoneOffset
@@ -28,6 +27,7 @@ private const val LOCK_FILE_NAME = ".lock"
 private const val DATE_TIME_PATTERN = "MM-dd HH:mm:ss.SSS"
 private const val PREFS_SAVE_LOGS_KEY = "SAVE_LOGS"
 private const val LOG_MAX_FILE_SIZE = 1024 * 1024
+private const val ALWAYS_PERSIST_FILE_LOGS = true
 
 /**
  * | Priority          | Save to file | Logcat logging                               |
@@ -54,7 +54,7 @@ object Log {
         get() = _saveLogs
         set(value) {
             if (_saveLogs != value) {
-                if (value && !logDir.exists() && !logDir.mkdir()) {
+                if (value && !logDir.exists() && !logDir.mkdirs()) {
                     NativeLog.e(TAG, "Failed to create dir: $logDir")
                     return
                 }
@@ -94,10 +94,17 @@ object Log {
     fun f(tag: String, msg: Any?) = f(tag, msg.toString())
 
     fun init(context: Context) {
+        logDir = File(context.getExternalFilesDir(null) ?: context.cacheDir, "logs")
+        if (!logDir.exists() && !logDir.mkdirs()) {
+            NativeLog.e(TAG, "Failed to create dir: $logDir")
+        }
+        NativeLog.i(TAG, "Android file log directory: ${logDir.absolutePath}")
         v(TAG, "Init Log")
-        logDir = File(context.cacheDir, "logs")
         saveLogs = Prefs.load(PREFS_SAVE_LOGS_KEY)
     }
+
+    @JvmStatic
+    fun logFilePath(): String = logFile.absolutePath
 
     fun getLogs(): String =
         "${deviceInfo()}\n${readLogs()}\nLOGCAT:\n${getLogcat()}"
@@ -112,7 +119,9 @@ object Log {
     }
 
     private fun log(tag: String, msg: String, priority: Priority) {
-        if (saveLogs && priority != V) saveLogMsg(formatLogMsg(tag, msg, priority))
+        if ((saveLogs || ALWAYS_PERSIST_FILE_LOGS) && priority != V) {
+            saveLogMsg(formatLogMsg(tag, msg, priority))
+        }
 
         if (priority == F) {
             NativeLog.wtf(tag, msg)

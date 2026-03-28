@@ -33,7 +33,9 @@ ListViewType {
                     var containerIndex = root.model.mapToSource(index)
                     ContainersModel.setProcessedContainerIndex(containerIndex)
 
-                    if (serviceType !== ProtocolEnum.Other && isThirdPartyConfig) {
+                    if (serviceType !== ProtocolEnum.Other
+                            && isThirdPartyConfig
+                            && containerIndex !== ContainerEnum.OXray) {
                         ProtocolsModel.updateModel(config)
                         PageController.goToPage(PageEnum.PageProtocolRaw)
                         return

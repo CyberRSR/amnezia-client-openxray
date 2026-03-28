@@ -59,6 +59,9 @@ void CoreController::initModels()
     m_openVpnConfigModel.reset(new OpenVpnConfigModel(this));
     m_engine->rootContext()->setContextProperty("OpenVpnConfigModel", m_openVpnConfigModel.get());
 
+    m_oxrayConfigModel.reset(new OxrayConfigModel(this));
+    m_engine->rootContext()->setContextProperty("OxrayConfigModel", m_oxrayConfigModel.get());
+
     m_shadowSocksConfigModel.reset(new ShadowSocksConfigModel(this));
     m_engine->rootContext()->setContextProperty("ShadowSocksConfigModel", m_shadowSocksConfigModel.get());
 

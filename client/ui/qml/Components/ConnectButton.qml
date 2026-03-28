@@ -15,6 +15,9 @@ Button {
     property string progressButtonColor: AmneziaStyle.color.paleGray
     property string connectedButtonColor: AmneziaStyle.color.goldenApricot
     property bool buttonActiveFocus: activeFocus && (Qt.platform.os !== "android" || SettingsController.isOnTv())
+    property real buttonDiameter: Math.min(width, height)
+    property real outerRadius: Math.max(0, buttonDiameter / 2 - 2)
+    property real innerRadius: Math.max(0, buttonDiameter / 2 - (buttonActiveFocus ? 4 : 3))
 
     property bool isFocusable: true
     
@@ -90,8 +93,8 @@ Button {
                 PathAngleArc {
                     centerX: backgroundCircle.width / 2
                     centerY: backgroundCircle.height / 2
-                    radiusX: 94
-                    radiusY: 94
+                    radiusX: root.outerRadius
+                    radiusY: root.outerRadius
                     startAngle: 0
                     sweepAngle: 360
                 }
@@ -114,8 +117,8 @@ Button {
                 PathAngleArc {
                     centerX: backgroundCircle.width / 2
                     centerY: backgroundCircle.height / 2
-                    radiusX: 93 - (root.buttonActiveFocus ? 2 : 0)
-                    radiusY: 93 - (root.buttonActiveFocus ? 2 : 0)
+                    radiusX: root.innerRadius
+                    radiusY: root.innerRadius
                     startAngle: 0
                     sweepAngle: 360
                 }
@@ -149,8 +152,8 @@ Button {
                 PathAngleArc {
                     centerX: shape.width / 2
                     centerY: shape.height / 2
-                    radiusX: 93
-                    radiusY: 93
+                    radiusX: root.innerRadius
+                    radiusY: root.innerRadius
                     startAngle: 245
                     sweepAngle: -180
                 }
@@ -172,7 +175,7 @@ Button {
 
         font.family: "PT Root UI VF"
         font.weight: 700
-        font.pixelSize: 20
+        font.pixelSize: Math.max(18, Math.round(root.buttonDiameter * 0.105))
 
         color: ConnectionController.isConnected ? connectedButtonColor : defaultButtonColor
         text: root.text

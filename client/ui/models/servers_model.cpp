@@ -666,7 +666,7 @@ QPair<QString, QString> ServersModel::getDnsPair(int serverIndex)
 {
     QPair<QString, QString> dns;
 
-    const QJsonObject &server = m_servers.at(m_processedServerIndex).toObject();
+    const QJsonObject &server = m_servers.at(serverIndex).toObject();
     const auto containers = server.value(config_key::containers).toArray();
     bool isDnsContainerInstalled = false;
     for (const QJsonValue &container : containers) {
@@ -675,8 +675,14 @@ QPair<QString, QString> ServersModel::getDnsPair(int serverIndex)
         }
     }
 
-    dns.first = server.value(config_key::dns1).toString();
-    dns.second = server.value(config_key::dns2).toString();
+    dns.first = server.value(config_key::dns1).toString().trimmed();
+    dns.second = server.value(config_key::dns2).toString().trimmed();
+    const bool useCustomDns = server.value(config_key::useCustomDns).toBool(!dns.first.isEmpty() || !dns.second.isEmpty());
+
+    if (!useCustomDns) {
+        dns.first.clear();
+        dns.second.clear();
+    }
 
     if (dns.first.isEmpty() || !NetworkUtilities::checkIPv4Format(dns.first)) {
         if (m_isAmneziaDnsEnabled && isDnsContainerInstalled) {
@@ -690,6 +696,33 @@ QPair<QString, QString> ServersModel::getDnsPair(int serverIndex)
 
     qDebug() << "VpnConfigurator::getDnsForConfig" << dns.first << dns.second;
     return dns;
+}
+
+bool ServersModel::isProcessedServerCustomDnsEnabled()
+{
+    const auto server = m_servers.at(m_processedServerIndex).toObject();
+    const auto primaryDns = server.value(config_key::dns1).toString().trimmed();
+    const auto secondaryDns = server.value(config_key::dns2).toString().trimmed();
+    return server.value(config_key::useCustomDns).toBool(!primaryDns.isEmpty() || !secondaryDns.isEmpty());
+}
+
+QString ServersModel::processedServerPrimaryDns()
+{
+    return m_servers.at(m_processedServerIndex).toObject().value(config_key::dns1).toString().trimmed();
+}
+
+QString ServersModel::processedServerSecondaryDns()
+{
+    return m_servers.at(m_processedServerIndex).toObject().value(config_key::dns2).toString().trimmed();
+}
+
+void ServersModel::updateProcessedServerDns(bool enabled, const QString &primaryDns, const QString &secondaryDns)
+{
+    auto server = m_servers.at(m_processedServerIndex).toObject();
+    server.insert(config_key::useCustomDns, enabled);
+    server.insert(config_key::dns1, primaryDns.trimmed());
+    server.insert(config_key::dns2, secondaryDns.trimmed());
+    editServer(server, m_processedServerIndex);
 }
 
 QStringList ServersModel::getAllInstalledServicesName(const int serverIndex)
@@ -832,7 +865,7 @@ bool ServersModel::isDefaultServerDefaultContainerHasSplitTunneling()
                     || (!clientProtocolConfig.value(config_key::allowed_ips).toArray().isEmpty()
                         && !clientProtocolConfig.value(config_key::allowed_ips).toArray().contains("0.0.0.0/0"));
         } else if (defaultContainer == DockerContainer::Cloak || defaultContainer == DockerContainer::OpenVpn
-                   || defaultContainer == DockerContainer::ShadowSocks) {
+                   || defaultContainer == DockerContainer::ShadowSocks || defaultContainer == DockerContainer::OXray) {
             auto serverProtocolConfig = container.value(ContainerProps::containerTypeToProtocolString(DockerContainer::OpenVpn)).toObject();
             QString clientProtocolConfigString = serverProtocolConfig.value(config_key::last_config).toString();
             return !clientProtocolConfigString.isEmpty() && !clientProtocolConfigString.contains("redirect-gateway");

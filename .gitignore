@@ -143,3 +143,15 @@ macos-with-sign-build.sh
 DeveloperIdApplicationCertificate.p12
 DeveloperIdInstallerCertificate.p12
 
+# Local OXray/OpenVPN test artifacts
+OpenVPN-Config-*.ovpn
+_tmp_*.pem
+_apk_*.log
+aqt*.log
+aqt-ci.ini
+b-android-dbg/
+b-x86_64/
+deploy/artifacts-local/
+deploy/artifacts-win11-x64/
+deploy/artifacts-win11-x64-current/
+

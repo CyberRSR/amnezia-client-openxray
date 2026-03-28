@@ -24,6 +24,7 @@ AndroidController::AndroidController() : QObject()
     connect(this, &AndroidController::status, this,
             [this](AndroidController::ConnectionState state) {
                 qDebug() << "Android event: status =" << textConnectionState(state);
+                m_lastKnownState = state;
                 if (isWaitingStatus) {
                     qDebug() << "Initialization by service status";
                     isWaitingStatus = false;
@@ -37,7 +38,14 @@ AndroidController::AndroidController() : QObject()
         [this]() {
             qDebug() << "Android event: service disconnected";
             isWaitingStatus = true;
-            emit connectionStateChanged(Vpn::ConnectionState::Disconnected);
+            const bool preserveActiveState =
+                    m_lastKnownState == AndroidController::ConnectionState::CONNECTED
+                    || m_lastKnownState == AndroidController::ConnectionState::CONNECTING
+                    || m_lastKnownState == AndroidController::ConnectionState::RECONNECTING
+                    || m_lastKnownState == AndroidController::ConnectionState::DISCONNECTING;
+            if (!preserveActiveState) {
+                emit connectionStateChanged(Vpn::ConnectionState::Disconnected);
+            }
         },
         Qt::QueuedConnection);
 
@@ -46,6 +54,7 @@ AndroidController::AndroidController() : QObject()
         [this]() {
             qDebug() << "Android event: service error";
             // todo: add error message
+            m_lastKnownState = AndroidController::ConnectionState::UNKNOWN;
             emit connectionStateChanged(Vpn::ConnectionState::Error);
         },
         Qt::QueuedConnection);
@@ -54,6 +63,7 @@ AndroidController::AndroidController() : QObject()
         this, &AndroidController::vpnPermissionRejected, this,
         [this]() {
             qWarning() << "Android event: VPN permission rejected";
+            m_lastKnownState = AndroidController::ConnectionState::DISCONNECTED;
             emit connectionStateChanged(Vpn::ConnectionState::Disconnected);
         },
         Qt::QueuedConnection);
@@ -62,6 +72,7 @@ AndroidController::AndroidController() : QObject()
         this, &AndroidController::vpnStateChanged, this,
         [this](AndroidController::ConnectionState state) {
             qDebug() << "Android event: VPN state changed:" << textConnectionState(state);
+            m_lastKnownState = state;
             emit connectionStateChanged(convertState(state));
         },
         Qt::QueuedConnection);
@@ -95,6 +106,7 @@ bool AndroidController::initialize()
         {"onVpnPermissionRejected", "()V", reinterpret_cast<void *>(onVpnPermissionRejected)},
         {"onNotificationStateChanged", "()V", reinterpret_cast<void *>(onNotificationStateChanged)},
         {"onVpnStateChanged", "(I)V", reinterpret_cast<void *>(onVpnStateChanged)},
+        {"onConnectionProgressChanged", "(Ljava/lang/String;)V", reinterpret_cast<void *>(onConnectionProgressChanged)},
         {"onStatisticsUpdate", "(JJ)V", reinterpret_cast<void *>(onStatisticsUpdate)},
         {"onFileOpened", "(Ljava/lang/String;)V", reinterpret_cast<void *>(onFileOpened)},
         {"onConfigImported", "(Ljava/lang/String;)V", reinterpret_cast<void *>(onConfigImported)},
@@ -498,6 +510,14 @@ void AndroidController::onVpnStateChanged(JNIEnv *env, jobject thiz, jint stateC
     auto state = ConnectionState(stateCode);
 
     emit AndroidController::instance()->vpnStateChanged(state);
+}
+
+// static
+void AndroidController::onConnectionProgressChanged(JNIEnv *env, jobject thiz, jstring json)
+{
+    Q_UNUSED(thiz);
+
+    emit AndroidController::instance()->connectionProgressChanged(AndroidUtils::convertJString(env, json));
 }
 
 // static

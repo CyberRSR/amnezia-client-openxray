@@ -25,6 +25,8 @@ private:
     Settings::RouteMode m_routeMode;
     QList<QHostAddress> m_dnsServers;
     QString m_remoteAddress;
+    QString m_upstreamGateway;
+    bool m_routeServerViaUpstream = false;
 
     QSharedPointer<IpcProcessInterfaceReplica> m_tun2socksProcess;
 };

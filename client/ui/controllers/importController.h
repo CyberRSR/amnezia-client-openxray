@@ -14,6 +14,7 @@ namespace
         WireGuard,
         Awg,
         Xray,
+        Oxray,
         ShadowSocks,
         Backup,
         Invalid
@@ -32,6 +33,7 @@ public slots:
     void importConfig();
     void clearConfigFileName();
     bool extractConfigFromFile(const QString &fileName);
+    bool extractOxrayConfigFromFiles(const QString &openVpnFileName, const QString &xrayFileName);
     bool extractConfigFromData(QString data);
     bool extractConfigFromQr(const QByteArray &data);
     QString getConfig();
@@ -65,6 +67,8 @@ private:
     QJsonObject extractOpenVpnConfig(const QString &data);
     QJsonObject extractWireGuardConfig(const QString &data);
     QJsonObject extractXrayConfig(const QString &data, const QString &description = "");
+    QJsonObject extractOxrayConfig(const QString &openVpnData, const QString &xrayData);
+    QJsonObject extractOxrayNativeConfig(const QString &data);
 
     void checkForMaliciousStrings(const QJsonObject &protocolConfig);
 

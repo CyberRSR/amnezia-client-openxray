@@ -38,6 +38,11 @@ QString OpenVpnProtocol::defaultConfigPath()
     return p;
 }
 
+QString OpenVpnProtocol::tunnelServerAddress() const
+{
+    return m_tunnelServerAddress;
+}
+
 void OpenVpnProtocol::stop()
 {
     qDebug() << "OpenVpnProtocol::stop()";
@@ -341,6 +346,17 @@ void OpenVpnProtocol::updateVpnGateway(const QString &line)
     // 120,ifconfig 10.8.0.6 10.8.0.5,peer-id 0,cipher AES-256-GCM'
     QStringList params = line.split(",");
     for (const QString &l : params) {
+        const auto trimmed = l.trimmed();
+        if (trimmed.startsWith("route ")) {
+            const auto routeParts = trimmed.split(' ', Qt::SkipEmptyParts);
+            if (routeParts.size() >= 2) {
+                const QHostAddress routeAddress(routeParts.at(1));
+                if (routeAddress.protocol() == QAbstractSocket::IPv4Protocol) {
+                    m_tunnelServerAddress = routeParts.at(1);
+                }
+            }
+        }
+
         if (l.contains("ifconfig")) {
             if (l.split(" ").size() == 3) {
                 m_vpnLocalAddress = l.split(" ").at(1);

@@ -6,6 +6,7 @@
 #include "core/networkUtilities.h"
 
 #include <QCryptographicHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkInterface>
@@ -13,6 +14,12 @@
 #include <QtCore/qlogging.h>
 #include <QtCore/qobjectdefs.h>
 #include <QtCore/qprocess.h>
+
+namespace
+{
+constexpr auto chainedUpstreamGatewayKey = "oxrayUpstreamGateway";
+constexpr auto chainedRouteServerViaUpstreamKey = "oxrayRouteServerViaUpstream";
+}
 
 #ifdef Q_OS_MACOS
 static const QString tunName = "utun22";
@@ -28,6 +35,9 @@ XrayProtocol::XrayProtocol(const QJsonObject &configuration, QObject *parent) : 
 
     m_routeMode = static_cast<Settings::RouteMode>(configuration.value(amnezia::config_key::splitTunnelType).toInt());
     m_remoteAddress = NetworkUtilities::getIPAddress(m_rawConfig.value(amnezia::config_key::hostName).toString());
+    m_upstreamGateway = configuration.value(chainedUpstreamGatewayKey).toString();
+    m_routeServerViaUpstream =
+            configuration.value(chainedRouteServerViaUpstreamKey).toBool() && !m_upstreamGateway.isEmpty() && !m_remoteAddress.isEmpty();
 
     const QString primaryDns = configuration.value(amnezia::config_key::dns1).toString();
     m_dnsServers.push_back(QHostAddress(primaryDns));
@@ -177,6 +187,29 @@ ErrorCode XrayProtocol::setupRouting() {
         if (!updateResolvers.waitForFinished() || !updateResolvers.returnValue()) {
             qCritical() << "Failed to set DNS resolvers for TUN";
             return ErrorCode::InternalError;
+        }
+
+        QStringList excludedRoutes;
+        if (m_routeServerViaUpstream) {
+            auto addUpstreamRoute = iface->routeAddList(m_upstreamGateway, QStringList() << m_remoteAddress);
+            if (!addUpstreamRoute.waitForFinished() || addUpstreamRoute.returnValue() != 1) {
+                qCritical() << "Failed to route Xray server through OpenVPN upstream" << m_remoteAddress << m_upstreamGateway;
+                return ErrorCode::InternalError;
+            }
+        } else if (!m_remoteAddress.isEmpty()) {
+            excludedRoutes.append(m_remoteAddress);
+        }
+        for (const auto &value : m_rawConfig.value(config_key::excludedAddresses).toArray()) {
+            const auto excludedAddress = value.toString().trimmed();
+            if (!excludedAddress.isEmpty() && !excludedRoutes.contains(excludedAddress)) {
+                excludedRoutes.append(excludedAddress);
+            }
+        }
+        if (!excludedRoutes.isEmpty()) {
+            auto addExcludedRoutes = iface->routeAddList(m_routeGateway, excludedRoutes);
+            if (!addExcludedRoutes.waitForFinished() || addExcludedRoutes.returnValue() != excludedRoutes.count()) {
+                qWarning() << "Failed to add Xray exclusion routes" << excludedRoutes;
+            }
         }
 
 #ifdef Q_OS_WIN

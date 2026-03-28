@@ -65,7 +65,7 @@ PageType {
             width: listView.width
 
             property bool isClientSettingsVisible: (protocolIndex === ProtocolEnum.WireGuard) || (protocolIndex === ProtocolEnum.Awg)
-            property bool isServerSettingsVisible: ServersModel.isProcessedServerHasWriteAccess()
+            property bool isServerSettingsVisible: ServersModel.isProcessedServerHasWriteAccess() || (protocolIndex === ProtocolEnum.OXray)
 
             LabelWithButtonType {
                 id: clientSettings
@@ -111,6 +111,7 @@ PageType {
                 clickedFunction: function() {
                     switch (protocolIndex) {
                     case ProtocolEnum.OpenVpn: OpenVpnConfigModel.updateModel(ProtocolsModel.getConfig()); break;
+                    case ProtocolEnum.OXray: OxrayConfigModel.updateModel(ProtocolsModel.getConfig()); break;
                     case ProtocolEnum.ShadowSocks: ShadowSocksConfigModel.updateModel(ProtocolsModel.getConfig()); break;
                     case ProtocolEnum.Cloak: CloakConfigModel.updateModel(ProtocolsModel.getConfig()); break;
                     case ProtocolEnum.WireGuard: WireGuardConfigModel.updateModel(ProtocolsModel.getConfig()); break;

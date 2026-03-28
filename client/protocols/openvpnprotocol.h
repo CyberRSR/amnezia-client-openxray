@@ -24,6 +24,7 @@ public:
     ErrorCode prepare() override;
     static QString defaultConfigFileName();
     static QString defaultConfigPath();
+    QString tunnelServerAddress() const;
 
 protected slots:
     void onReadyReadDataFromManagementServer();
@@ -54,6 +55,7 @@ private:
     void updateVpnGateway(const QString &line);
 
     QSharedPointer<IpcProcessInterfaceReplica> m_openVpnProcess;
+    QString m_tunnelServerAddress;
 };
 
 #endif // OPENVPNPROTOCOL_H

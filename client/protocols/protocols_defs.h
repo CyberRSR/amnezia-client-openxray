@@ -19,6 +19,7 @@ namespace amnezia
 
         constexpr char dns1[] = "dns1";
         constexpr char dns2[] = "dns2";
+        constexpr char useCustomDns[] = "useCustomDns";
 
         constexpr char serverIndex[] = "serverIndex";
         constexpr char description[] = "description";
@@ -93,6 +94,7 @@ namespace amnezia
         constexpr char sftp[] = "sftp";
         constexpr char awg[] = "awg";
         constexpr char xray[] = "xray";
+        constexpr char oxray[] = "oxray";
         constexpr char ssxray[] = "ssxray";
         constexpr char socks5proxy[] = "socks5proxy";
 
@@ -100,6 +102,7 @@ namespace amnezia
 
         constexpr char splitTunnelSites[] = "splitTunnelSites";
         constexpr char splitTunnelType[] = "splitTunnelType";
+        constexpr char excludedAddresses[] = "excludedAddresses";
 
         constexpr char splitTunnelApps[] = "splitTunnelApps";
         constexpr char appSplitTunnelType[] = "appSplitTunnelType";
@@ -274,6 +277,7 @@ namespace amnezia
             Ikev2,
             L2tp,
             Xray,
+            OXray,
             SSXray,
 
             // non-vpn

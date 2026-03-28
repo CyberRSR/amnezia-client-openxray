@@ -24,7 +24,7 @@ import org.json.JSONObject
 private const val TAG = "Xray"
 private const val LIBXRAY_TAG = "libXray"
 
-class Xray : Protocol() {
+open class Xray : Protocol() {
 
     private var isRunning: Boolean = false
     override val statistics: Statistics = Statistics.EMPTY_STATISTICS
@@ -76,21 +76,32 @@ class Xray : Protocol() {
     }
 
     private fun parseConfig(config: JSONObject, xrayJsonConfig: JSONObject): XrayConfig {
+        val dnsServers = resolveDnsServers(config)
+        Log.i(TAG, "Xray interface DNS order: ${dnsServers.ifEmpty { listOf("<none>") }}")
+
         return XrayConfig.build {
             addAddress(XrayConfig.DEFAULT_IPV4_ADDRESS)
 
-            config.optString("dns1").let {
-                if (it.isNotBlank()) addDnsServer(parseInetAddress(it))
-            }
-
-            config.optString("dns2").let {
-                if (it.isNotBlank()) addDnsServer(parseInetAddress(it))
+            for (dnsServer in dnsServers) {
+                val parsedDnsServer = parseInetAddress(dnsServer)
+                addDnsServer(parsedDnsServer)
+                // Route DNS explicitly through the VPN interface so mobile policy routing
+                // does not have to rely solely on the default route.
+                addRoute(InetNetwork(parsedDnsServer))
             }
 
             addRoute(InetNetwork("0.0.0.0", 0))
             addRoute(InetNetwork("2000::0", 3))
-            config.getString("hostName").let {
-                excludeRoute(InetNetwork(it, 32))
+            config.getString("hostName").let { hostName ->
+                excludeRoute(InetNetwork(parseInetAddress(hostName)))
+            }
+
+            config.optJSONArray("excludedAddresses")?.let { excludedAddresses ->
+                for (index in 0 until excludedAddresses.length()) {
+                    excludedAddresses.optString(index)
+                        .takeIf { it.isNotBlank() }
+                        ?.let { excludeRoute(InetNetwork(parseInetAddress(it))) }
+                }
             }
 
             config.optString("mtu").let {
@@ -105,10 +116,41 @@ class Xray : Protocol() {
         }
     }
 
+    private fun resolveDnsServers(config: JSONObject): List<String> {
+        val dnsServers = linkedSetOf<String>()
+
+        config.optJSONArray("dnsServers")?.let { dnsArray ->
+            for (index in 0 until dnsArray.length()) {
+                dnsArray.optString(index)
+                    .takeIf { it.isNotBlank() }
+                    ?.let(dnsServers::add)
+            }
+        }
+
+        config.optString("dns1")
+            .takeIf { it.isNotBlank() }
+            ?.let(dnsServers::add)
+        config.optString("dns2")
+            .takeIf { it.isNotBlank() }
+            ?.let(dnsServers::add)
+
+        return dnsServers.toList()
+    }
+
     private fun start(config: XrayConfig, configJson: String, vpnBuilder: Builder, protect: (Int) -> Boolean) {
         buildVpnInterface(config, vpnBuilder)
 
-        DialerController { protect(it.toInt()) }.also {
+        if (!shouldProtectDialerSockets()) {
+            Log.i(TAG, "Xray dialer sockets are left unprotected for chained upstream routing")
+        }
+        val controller = DialerController { socket ->
+            if (shouldProtectDialerSockets()) {
+                protect(socket.toInt())
+            } else {
+                true
+            }
+        }
+        controller.also {
             LibXray.registerDialerController(it).isNotNullOrBlank { err ->
                 throw VpnStartException("Failed to register dialer controller: $err")
             }
@@ -160,6 +202,8 @@ class Xray : Protocol() {
     override fun reconnectVpn(vpnBuilder: Builder, protect: (Int) -> Boolean) {
         state.value = CONNECTED
     }
+
+    protected open fun shouldProtectDialerSockets(): Boolean = true
 
     private fun runTun2Socks(config: XrayConfig, fd: Int) {
         val tun2SocksConfig = Tun2SocksConfig().apply {

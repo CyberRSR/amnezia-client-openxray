@@ -21,16 +21,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- To request network state -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:name=".AmneziaApplication"
-        android:label="-- %%INSERT_APP_NAME%% --"
+        android:label="${appLabel}"
         android:icon="@mipmap/icon"
         android:roundIcon="@mipmap/icon_round"
         android:banner="@mipmap/ic_banner"
@@ -66,7 +68,7 @@
 
             <meta-data
                 android:name="android.app.lib_name"
-                android:value="-- %%INSERT_APP_LIB_NAME%% --" />
+                android:value="${qtLibName}" />
 
         </activity>
 
@@ -179,6 +181,19 @@
         </service>
 
         <service
+            android:name=".OxrayService"
+            android:process=":amneziaOxrayService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="systemExempted"
+            android:exported="false"
+            tools:ignore="ForegroundServicePermission">
+
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".XrayService"
             android:process=":amneziaXrayService"
             android:permission="android.permission.BIND_VPN_SERVICE"
@@ -209,7 +224,7 @@
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="org.amnezia.vpn.qtprovider"
+            android:authorities="${applicationId}.qtprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/qtprovider_paths" />

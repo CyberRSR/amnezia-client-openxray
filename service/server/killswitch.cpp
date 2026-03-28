@@ -230,6 +230,12 @@ bool KillSwitch::enablePeerTraffic(const QJsonObject &configStr) {
     }
 
     config.m_excludedAddresses.append(configStr.value("vpnServer").toString());
+    for (const auto &value : configStr.value(amnezia::config_key::excludedAddresses).toArray()) {
+        const auto excludedAddress = value.toString().trimmed();
+        if (!excludedAddress.isEmpty() && !config.m_excludedAddresses.contains(excludedAddress)) {
+            config.m_excludedAddresses.append(excludedAddress);
+        }
+    }
     if (splitTunnelType == 2) {
         for (auto v : splitTunnelSites) {
             QString ipRange = v.toString();
@@ -294,6 +300,15 @@ bool KillSwitch::enableKillSwitch(const QJsonObject &configStr, int vpnAdapterIn
         allownets.append(configStr.value("vpnServer").toString());
         for (auto v : splitTunnelSites) {
             allownets.append(v.toString());
+        }
+    }
+
+    if (allowNets) {
+        for (const auto &value : configStr.value(amnezia::config_key::excludedAddresses).toArray()) {
+            const auto excludedAddress = value.toString().trimmed();
+            if (!excludedAddress.isEmpty() && !allownets.contains(excludedAddress)) {
+                allownets.append(excludedAddress);
+            }
         }
     }
 #endif

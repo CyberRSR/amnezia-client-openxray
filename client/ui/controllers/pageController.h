@@ -65,6 +65,7 @@ namespace PageLoader
         PageProtocolShadowSocksSettings,
         PageProtocolCloakSettings,
         PageProtocolXraySettings,
+        PageProtocolOxraySettings,
         PageProtocolWireGuardSettings,
         PageProtocolAwgSettings,
         PageProtocolIKev2Settings,

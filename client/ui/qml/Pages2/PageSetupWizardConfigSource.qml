@@ -265,6 +265,7 @@ PageType {
         amneziaVpn,
         selfHostVpn,
         backupRestore,
+        oxrayFiles,
         fileOpen,
         qrScan,
         restorePurchases,
@@ -314,6 +315,31 @@ PageType {
                 PageController.showBusyIndicator(true)
                 SettingsController.restoreAppConfig(filePath)
                 PageController.showBusyIndicator(false)
+            }
+        }
+    }
+
+    QtObject {
+        id: oxrayFiles
+
+        property string title: qsTr("OXray (OpenVPN + XRay)")
+        property string description: qsTr("Create one OXray profile from an .ovpn file and an XRay config")
+        property string imageSource: "qrc:/images/controls/file-cog-2.svg"
+        property bool isVisible: true
+        property var handler: function() {
+            var openVpnFileName = SystemController.getFileName(qsTr("Open OpenVPN config"), qsTr("OpenVPN config (*.ovpn)"))
+            if (openVpnFileName === "") {
+                return
+            }
+
+            var xrayFileName = SystemController.getFileName(qsTr("Open XRay config"),
+                                                            qsTr("XRay config (*.json *.txt *.conf)"))
+            if (xrayFileName === "") {
+                return
+            }
+
+            if (ImportController.extractOxrayConfigFromFiles(openVpnFileName, xrayFileName)) {
+                PageController.goToPage(PageEnum.PageSetupWizardViewConfig)
             }
         }
     }

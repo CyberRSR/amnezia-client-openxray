@@ -118,12 +118,109 @@ PageType {
                 }
             }
 
-            ConnectButton {
-                id: connectButton
-                objectName: "connectButton"
+            Item {
+                id: connectionStatusBlock
+                objectName: "connectionStatusBlock"
 
+                property bool progressVisible: ConnectionController.connectionProgressItems.length > 0
+
+                Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.alignment: Qt.AlignCenter
+
+                implicitHeight: progressVisible ? Math.max(connectButton.height, progressColumn.implicitHeight) : connectButton.height
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: connectionStatusBlock.progressVisible ? 16 : 0
+
+                    ConnectButton {
+                        id: connectButton
+                        objectName: "connectButton"
+
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: connectionStatusBlock.progressVisible ? 152 : 190
+                        Layout.preferredHeight: connectionStatusBlock.progressVisible ? 152 : 190
+                    }
+
+                    ColumnLayout {
+                        id: progressColumn
+
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.maximumWidth: Math.max(120, root.width - connectButton.width - 56)
+                        spacing: 8
+                        visible: connectionStatusBlock.progressVisible
+
+                        Text {
+                            Layout.fillWidth: true
+
+                            font.family: "PT Root UI VF"
+                            font.pixelSize: 16
+                            font.weight: 700
+                            color: AmneziaStyle.color.paleGray
+                            wrapMode: Text.WordWrap
+                            text: ConnectionController.connectionProgressStatusText !== ""
+                                  ? ConnectionController.connectionProgressStatusText
+                                  : ConnectionController.connectionStateText
+                        }
+
+                        Repeater {
+                            model: ConnectionController.connectionProgressItems
+
+                            delegate: RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Image {
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
+                                    source: {
+                                        if (modelData.state === 2) {
+                                            return "qrc:/images/controls/check.svg"
+                                        }
+                                        if (modelData.state === 3) {
+                                            return "qrc:/images/controls/x-circle.svg"
+                                        }
+                                        return "qrc:/images/controls/unread-dot.svg"
+                                    }
+                                    sourceSize.width: 16
+                                    sourceSize.height: 16
+                                    fillMode: Image.PreserveAspectFit
+                                    opacity: modelData.state === 0 ? 0.45 : 1
+
+                                    ColorOverlay {
+                                        anchors.fill: parent
+                                        source: parent
+                                        color: {
+                                            if (modelData.state === 2) {
+                                                return "#6DDB7A"
+                                            }
+                                            if (modelData.state === 3) {
+                                                return AmneziaStyle.color.vibrantRed
+                                            }
+                                            if (modelData.state === 1) {
+                                                return AmneziaStyle.color.goldenApricot
+                                            }
+                                            return AmneziaStyle.color.mutedGray
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+
+                                    font.family: "PT Root UI VF"
+                                    font.pixelSize: 13
+                                    font.weight: modelData.state === 1 ? 600 : 500
+                                    color: modelData.state === 3 ? AmneziaStyle.color.vibrantRed : AmneziaStyle.color.paleGray
+                                    opacity: modelData.state === 0 ? 0.55 : 0.95
+                                    wrapMode: Text.WordWrap
+                                    text: modelData.label
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             BasicButtonType {
