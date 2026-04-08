@@ -552,6 +552,16 @@ bool IosController::setupOpenVPN()
 
     QJsonDocument openVPNConfigDoc(openVPNConfig);
     QString openVPNConfigStr(openVPNConfigDoc.toJson(QJsonDocument::Compact));
+    QString openVPNConfigPreview = openVPNConfigStr.left(512);
+    QString ovpnPreview = ovpnConfig.left(512);
+
+    qDebug().noquote() << "IosController::setupOpenVPN payload"
+                       << "jsonBytes=" << openVPNConfigStr.toUtf8().size()
+                       << "ovpnChars=" << ovpnConfig.size()
+                       << "splitTunnelType=" << m_rawConfig[config_key::splitTunnelType].toInt()
+                       << "splitTunnelSites=" << splitTunnelSites;
+    qDebug().noquote() << "IosController::setupOpenVPN payload jsonPreview=" << openVPNConfigPreview;
+    qDebug().noquote() << "IosController::setupOpenVPN payload ovpnPreview=" << ovpnPreview;
 
     return startOpenVPN(openVPNConfigStr);
 }
@@ -800,10 +810,58 @@ bool IosController::startOpenVPN(const QString &config)
 
     NETunnelProviderProtocol *tunnelProtocol = [[NETunnelProviderProtocol alloc] init];
     tunnelProtocol.providerBundleIdentifier = [NSString stringWithUTF8String:VPN_NE_BUNDLEID];
-    tunnelProtocol.providerConfiguration = @{@"ovpn": [[NSString stringWithUTF8String:config.toStdString().c_str()] dataUsingEncoding:NSUTF8StringEncoding]};
+    QByteArray configUtf8 = config.toUtf8();
+    NSData *ovpnConfigData = [NSData dataWithBytes:configUtf8.constData() length:configUtf8.size()];
+    tunnelProtocol.providerConfiguration = @{@"ovpn": ovpnConfigData};
     tunnelProtocol.serverAddress = m_serverAddress;
+    if (@available(iOS 14.0, macOS 11.0, *)) {
+        int splitTunnelType = 0;
+        QJsonParseError parseError;
+        QJsonDocument doc = QJsonDocument::fromJson(config.toUtf8(), &parseError);
+        if (parseError.error == QJsonParseError::NoError && doc.isObject()) {
+            QJsonObject obj = doc.object();
+            splitTunnelType = obj.value(config_key::splitTunnelType).toInt(0);
+        }
+#if defined(MACOS_NE)
+        // On macOS NE use route-based full tunnel. includeAllNetworks enables
+        // policy-based drop-all mode and causes enforceRoutes to be ignored.
+        tunnelProtocol.includeAllNetworks = NO;
+        if (splitTunnelType == 0) {
+            tunnelProtocol.enforceRoutes = YES;
+            if (@available(iOS 14.2, macOS 11.0, *)) {
+                tunnelProtocol.excludeLocalNetworks = YES;
+            }
+        }
+#else
+        tunnelProtocol.includeAllNetworks = (splitTunnelType == 0);
+        if (@available(iOS 14.2, macOS 11.0, *)) {
+            // Keep existing iOS behavior.
+            if (splitTunnelType == 0) {
+                tunnelProtocol.excludeLocalNetworks = NO;
+            }
+        }
+#endif
+    }
 
     m_currentTunnel.protocolConfiguration = tunnelProtocol;
+
+    NETunnelProviderProtocol *appliedProtocol = (NETunnelProviderProtocol *)m_currentTunnel.protocolConfiguration;
+    NSData *ovpnPayload = appliedProtocol.providerConfiguration[@"ovpn"];
+    NSString *payloadPreview = @"";
+    if (ovpnPayload != nil) {
+        NSString *decodedPayload = [[NSString alloc] initWithData:ovpnPayload encoding:NSUTF8StringEncoding];
+        if (decodedPayload != nil) {
+            payloadPreview = [decodedPayload substringToIndex:MIN((NSUInteger)512, decodedPayload.length)];
+        }
+    }
+
+    qDebug().noquote() << "IosController::startOpenVPN protocolConfiguration"
+                       << "bundleId=" << QString::fromNSString(appliedProtocol.providerBundleIdentifier ?: @"")
+                       << "serverAddress=" << QString::fromNSString(appliedProtocol.serverAddress ?: @"")
+                       << "providerKeys=" << QString::fromNSString([[appliedProtocol.providerConfiguration.allKeys description] copy])
+                       << "ovpnBytes=" << (ovpnPayload != nil ? ovpnPayload.length : 0);
+    qDebug().noquote() << "IosController::startOpenVPN protocolConfiguration payloadPreview="
+                       << QString::fromNSString(payloadPreview);
 
     startTunnel();
 }
@@ -814,7 +872,9 @@ bool IosController::startWireGuard(const QString &config)
 
     NETunnelProviderProtocol *tunnelProtocol = [[NETunnelProviderProtocol alloc] init];
     tunnelProtocol.providerBundleIdentifier = [NSString stringWithUTF8String:VPN_NE_BUNDLEID];
-    tunnelProtocol.providerConfiguration = @{@"wireguard": [[NSString stringWithUTF8String:config.toStdString().c_str()] dataUsingEncoding:NSUTF8StringEncoding]};
+    QByteArray configUtf8 = config.toUtf8();
+    NSData *wgConfigData = [NSData dataWithBytes:configUtf8.constData() length:configUtf8.size()];
+    tunnelProtocol.providerConfiguration = @{@"wireguard": wgConfigData};
     tunnelProtocol.serverAddress = m_serverAddress;
 
     m_currentTunnel.protocolConfiguration = tunnelProtocol;
@@ -828,7 +888,9 @@ bool IosController::startXray(const QString &config)
 
     NETunnelProviderProtocol *tunnelProtocol = [[NETunnelProviderProtocol alloc] init];
     tunnelProtocol.providerBundleIdentifier = [NSString stringWithUTF8String:VPN_NE_BUNDLEID];
-    tunnelProtocol.providerConfiguration = @{@"xray": [[NSString stringWithUTF8String:config.toStdString().c_str()] dataUsingEncoding:NSUTF8StringEncoding]};
+    QByteArray configUtf8 = config.toUtf8();
+    NSData *xrayConfigData = [NSData dataWithBytes:configUtf8.constData() length:configUtf8.size()];
+    tunnelProtocol.providerConfiguration = @{@"xray": xrayConfigData};
     tunnelProtocol.serverAddress = m_serverAddress;
 
     m_currentTunnel.protocolConfiguration = tunnelProtocol;
