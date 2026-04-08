@@ -6,12 +6,7 @@
     #include <QApplication>
 #endif
 
-#ifdef Q_OS_ANDROID
-    #include "platforms/android/android_controller.h"
-#endif
-
-#include <QJsonDocument>
-
+#include "amnezia_application.h"
 #include "utilities.h"
 #include "core/controllers/vpnConfigurationController.h"
 #include "version.h"
@@ -33,11 +28,6 @@ ConnectionController::ConnectionController(const QSharedPointer<ServersModel> &s
     connect(this, &ConnectionController::disconnectFromVpn, m_vpnConnection.get(), &VpnConnection::disconnectFromVpn, Qt::QueuedConnection);
 
     connect(this, &ConnectionController::connectButtonClicked, this, &ConnectionController::toggleConnection, Qt::QueuedConnection);
-
-#ifdef Q_OS_ANDROID
-    connect(AndroidController::instance(), &AndroidController::connectionProgressChanged,
-            this, &ConnectionController::onConnectionProgressChanged, Qt::QueuedConnection);
-#endif
 
     m_state = Vpn::ConnectionState::Disconnected;
 }
@@ -92,6 +82,8 @@ void ConnectionController::onConnectionStateChanged(Vpn::ConnectionState state)
     m_connectionStateText = tr("Connecting...");
     switch (state) {
     case Vpn::ConnectionState::Connected: {
+        amnApp->networkManager()->clearConnectionCache();
+
         m_isConnectionInProgress = false;
         m_isConnected = true;
         m_connectionStateText = tr("Connected");
@@ -109,8 +101,6 @@ void ConnectionController::onConnectionStateChanged(Vpn::ConnectionState state)
     case Vpn::ConnectionState::Disconnected: {
         m_isConnectionInProgress = false;
         m_connectionStateText = tr("Connect");
-        m_connectionProgressStatusText.clear();
-        m_connectionProgress = {};
         break;
     }
     case Vpn::ConnectionState::Disconnecting: {
@@ -165,42 +155,6 @@ QString ConnectionController::connectionStateText() const
     return m_connectionStateText;
 }
 
-QVariantList ConnectionController::connectionProgressItems() const
-{
-    QVariantList items;
-    for (const auto &value : m_connectionProgress) {
-        if (!value.isObject()) {
-            continue;
-        }
-
-        const auto item = value.toObject();
-        items.append(QVariantMap {
-            { "label", translatedProgressLabel(item.value("key").toString()) },
-            { "state", item.value("state").toInt() }
-        });
-    }
-    return items;
-}
-
-QString ConnectionController::connectionProgressStatusText() const
-{
-    return m_connectionProgressStatusText;
-}
-
-void ConnectionController::onConnectionProgressChanged(const QString &json)
-{
-    const auto document = QJsonDocument::fromJson(json.toUtf8());
-    if (document.isObject()) {
-        const auto object = document.object();
-        m_connectionProgressStatusText = object.value("message").toString();
-        m_connectionProgress = object.value("steps").toArray();
-    } else {
-        m_connectionProgressStatusText.clear();
-        m_connectionProgress = {};
-    }
-    emit connectionStateChanged();
-}
-
 void ConnectionController::toggleConnection()
 {
     if (m_state == Vpn::ConnectionState::Preparing) {
@@ -225,24 +179,4 @@ bool ConnectionController::isConnectionInProgress() const
 bool ConnectionController::isConnected() const
 {
     return m_isConnected;
-}
-
-QString ConnectionController::translatedProgressLabel(const QString &key) const
-{
-    if (key == "openvpn") {
-        return tr("OpenVPN tunnel");
-    }
-    if (key == "xray") {
-        return tr("Xray tunnel");
-    }
-    if (key == "readmcu") {
-        return tr("readmcu.com check");
-    }
-    if (key == "speedtest") {
-        return tr("speedtest.net check");
-    }
-    if (key == "healthcheck") {
-        return tr("Periodic connection check");
-    }
-    return key;
 }
