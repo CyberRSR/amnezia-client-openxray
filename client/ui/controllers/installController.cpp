@@ -1016,6 +1016,10 @@ void InstallController::validateConfig()
     QSharedPointer<ServerController> serverController(new ServerController(m_settings));
 
     auto isProtocolConfigExists = [](const QJsonObject &containerConfig, const DockerContainer container) {
+        if (container == DockerContainer::OXray) {
+            return !containerConfig.value(config_key::openvpn).toObject().value(config_key::last_config).toString().isEmpty()
+                   && !containerConfig.value(config_key::xray).toObject().value(config_key::last_config).toString().isEmpty();
+        }
         for (Proto protocol : ContainerProps::protocolsForContainer(container)) {
             QString protocolConfig =
                     containerConfig.value(ProtocolProps::protoToString(protocol)).toObject().value(config_key::last_config).toString();

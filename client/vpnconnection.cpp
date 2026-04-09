@@ -5,11 +5,14 @@
 #include <QFile>
 #include <QHostInfo>
 #include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QObject>
 #include <QSharedPointer>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QUrl>
 
 #include <configurators/cloak_configurator.h>
 #include <configurators/openvpn_configurator.h>
@@ -34,9 +37,39 @@
 #include "core/networkUtilities.h"
 #include "vpnconnection.h"
 
-VpnConnection::VpnConnection(std::shared_ptr<Settings> settings, QObject *parent)
-    : QObject(parent), m_settings(settings), m_checkTimer(new QTimer(this))
+#ifdef AMNEZIA_DESKTOP
+namespace
 {
+constexpr int healthCheckInitialDelayMs = 3000;
+constexpr int healthCheckIntervalMs = 3000;
+constexpr int healthCheckRequestTimeoutMs = 2000;
+constexpr int healthCheckFailureThreshold = 3;
+
+QList<QUrl> healthCheckUrls()
+{
+    return {
+        QUrl(QStringLiteral("https://readmcu.com/ru/catalog/")),
+        QUrl(QStringLiteral("https://www.speedtest.net/"))
+    };
+}
+} // namespace
+#endif
+
+VpnConnection::VpnConnection(std::shared_ptr<Settings> settings, QObject *parent)
+    : QObject(parent),
+      m_settings(settings),
+      m_checkTimer(this)
+#ifdef AMNEZIA_DESKTOP
+      ,
+      m_healthCheckTimer(this)
+#endif
+{
+#ifdef AMNEZIA_DESKTOP
+    m_healthCheckManager = new QNetworkAccessManager(this);
+    m_healthCheckTimer.setInterval(healthCheckIntervalMs);
+    connect(&m_healthCheckTimer, &QTimer::timeout, this, &VpnConnection::runHealthCheck);
+#endif
+
 #if defined(Q_OS_IOS) || defined(MACOS_NE)
     m_checkTimer.setInterval(1000);
     connect(IosController::Instance(), &IosController::connectionStateChanged, this, &VpnConnection::setConnectionState);
@@ -127,6 +160,14 @@ void VpnConnection::onConnectionStateChanged(Vpn::ConnectionState state)
     });
 #endif
 
+#ifdef AMNEZIA_DESKTOP
+    if (state == Vpn::ConnectionState::Connected) {
+        startHealthCheckMonitor();
+    } else {
+        stopHealthCheckMonitor();
+    }
+#endif
+
 #if defined(Q_OS_IOS) || defined(MACOS_NE)
     if (state == Vpn::ConnectionState::Connected ||
         state == Vpn::ConnectionState::Connecting ||
@@ -182,7 +223,7 @@ void VpnConnection::addSitesRoutes(const QString &gw, Settings::RouteMode mode)
                     }
                     IpcClient::withInterface([](QSharedPointer<IpcInterfaceReplica> iface) {
                         auto reply = iface->flushDns();
-                        if (reply.waitForFinished() || !reply.returnValue())
+                        if (!reply.waitForFinished() || !reply.returnValue())
                             qWarning() << "VpnConnection::addSitesRoutes: Failed to flush DNS";
                     });
                     break;
@@ -422,6 +463,146 @@ QString VpnConnection::bytesPerSecToText(quint64 bytes)
     double mbps = bytes * 8 / 1e6;
     return QString("%1 %2").arg(QString::number(mbps, 'f', 2)).arg(tr("Mbps")); // Mbit/s
 }
+
+#ifdef AMNEZIA_DESKTOP
+void VpnConnection::startHealthCheckMonitor()
+{
+    m_failedHealthCheckRounds = 0;
+
+    if (!m_healthCheckTimer.isActive()) {
+        m_healthCheckTimer.start();
+    }
+
+    QTimer::singleShot(healthCheckInitialDelayMs, this, [this]() {
+        if (m_connectionState == Vpn::ConnectionState::Connected) {
+            runHealthCheck();
+        }
+    });
+}
+
+void VpnConnection::stopHealthCheckMonitor()
+{
+    m_healthCheckTimer.stop();
+    abortHealthCheckReplies();
+    m_pendingHealthCheckReplies = 0;
+    m_failedHealthCheckRounds = 0;
+    m_healthCheckRoundActive = false;
+    m_healthCheckRoundSucceeded = false;
+}
+
+void VpnConnection::abortHealthCheckReplies()
+{
+    ++m_healthCheckRoundId;
+
+    const auto replies = m_healthCheckReplies.values();
+    m_healthCheckReplies.clear();
+
+    for (auto *reply : replies) {
+        if (!reply) {
+            continue;
+        }
+
+        disconnect(reply, nullptr, this, nullptr);
+        reply->abort();
+        reply->deleteLater();
+    }
+}
+
+void VpnConnection::runHealthCheck()
+{
+    if (!m_healthCheckManager || m_connectionState != Vpn::ConnectionState::Connected || m_healthCheckRoundActive) {
+        return;
+    }
+
+    m_healthCheckRoundActive = true;
+    m_healthCheckRoundSucceeded = false;
+    m_pendingHealthCheckReplies = 0;
+    const quint64 roundId = ++m_healthCheckRoundId;
+
+    for (const auto &url : healthCheckUrls()) {
+        QNetworkRequest request(url);
+        request.setTransferTimeout(healthCheckRequestTimeoutMs);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+        request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
+        request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("AmneziaVPN-HealthCheck/1.0"));
+
+        auto *reply = m_healthCheckManager->get(request);
+        reply->setProperty("healthCheckRoundId", QVariant::fromValue(roundId));
+        reply->setProperty("healthCheckUrl", url.toString());
+        m_healthCheckReplies.insert(reply);
+        ++m_pendingHealthCheckReplies;
+
+        connect(reply, &QNetworkReply::finished, this, &VpnConnection::onHealthCheckReplyFinished);
+    }
+}
+
+void VpnConnection::onHealthCheckReplyFinished()
+{
+    auto *reply = qobject_cast<QNetworkReply *>(sender());
+    if (!reply) {
+        return;
+    }
+
+    const auto roundId = reply->property("healthCheckRoundId").toULongLong();
+    const auto url = reply->property("healthCheckUrl").toString();
+    const auto statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const auto success = statusCode > 0 || reply->error() == QNetworkReply::NoError;
+
+    if (success) {
+        qDebug().noquote() << QString("VpnConnection::runHealthCheck: %1 responded with HTTP %2")
+                                      .arg(url)
+                                      .arg(statusCode);
+    } else {
+        qWarning().noquote() << QString("VpnConnection::runHealthCheck: %1 failed: %2")
+                                        .arg(url, reply->errorString());
+    }
+
+    m_healthCheckReplies.remove(reply);
+    reply->deleteLater();
+
+    if (!m_healthCheckRoundActive || roundId != m_healthCheckRoundId) {
+        return;
+    }
+
+    if (success) {
+        m_healthCheckRoundSucceeded = true;
+    }
+
+    --m_pendingHealthCheckReplies;
+    if (m_pendingHealthCheckReplies <= 0) {
+        finalizeHealthCheckRound();
+    }
+}
+
+void VpnConnection::finalizeHealthCheckRound()
+{
+    m_healthCheckRoundActive = false;
+    m_pendingHealthCheckReplies = 0;
+
+    if (m_connectionState != Vpn::ConnectionState::Connected) {
+        m_healthCheckRoundSucceeded = false;
+        return;
+    }
+
+    if (m_healthCheckRoundSucceeded) {
+        if (m_failedHealthCheckRounds > 0) {
+            qDebug() << "VpnConnection::finalizeHealthCheckRound: Connectivity restored";
+        }
+        m_failedHealthCheckRounds = 0;
+        return;
+    }
+
+    ++m_failedHealthCheckRounds;
+    qWarning() << "VpnConnection::finalizeHealthCheckRound: failed round"
+               << m_failedHealthCheckRounds << "of" << healthCheckFailureThreshold;
+
+    if (m_failedHealthCheckRounds >= healthCheckFailureThreshold) {
+        qWarning() << "VpnConnection::finalizeHealthCheckRound: reconnecting after repeated health-check failures";
+        m_failedHealthCheckRounds = 0;
+        reconnectToVpn();
+    }
+}
+#endif
 
 void VpnConnection::reconnectToVpn() {
     if (m_vpnProtocol.isNull())

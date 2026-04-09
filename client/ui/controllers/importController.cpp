@@ -36,6 +36,8 @@ namespace
 
         const QString xrayConfigPatternInbound = "inbounds";
         const QString xrayConfigPatternOutbound = "outbounds";
+        const QString oxrayNativeFormatPattern = "\"format\"";
+        const QString oxrayNativeFormatValue = "amnezia-oxray-native";
 
         const QString amneziaConfigPattern = "containers";
         const QString amneziaConfigPatternHostName = "hostName";
@@ -45,7 +47,9 @@ namespace
         const QString amneziaPremiumConfigPattern = "auth_data";
         const QString backupPattern = "Servers/serversList";
 
-        if (config.contains(backupPattern)) {
+        if (config.contains(oxrayNativeFormatPattern) && config.contains(oxrayNativeFormatValue)) {
+            return ConfigTypes::Oxray;
+        } else if (config.contains(backupPattern)) {
             return ConfigTypes::Backup;
         } else if (config.contains(amneziaConfigPattern) || config.contains(amneziaFreeConfigPattern)
                    || config.contains(amneziaPremiumConfigPattern)
@@ -91,6 +95,33 @@ bool ImportController::extractConfigFromFile(const QString &fileName)
     }
 #endif
     return extractConfigFromData(data);
+}
+
+bool ImportController::extractOxrayConfigFromFiles(const QString &openVpnFileName, const QString &xrayFileName)
+{
+    QString openVpnData;
+    if (!SystemController::readFile(openVpnFileName, openVpnData)) {
+        emit importErrorOccurred(ErrorCode::ImportOpenConfigError, false);
+        return false;
+    }
+
+    QString xrayData;
+    if (!SystemController::readFile(xrayFileName, xrayData)) {
+        emit importErrorOccurred(ErrorCode::ImportOpenConfigError, false);
+        return false;
+    }
+
+    m_configFileName =
+            QString("%1 + %2").arg(QFileInfo(openVpnFileName).fileName(), QFileInfo(xrayFileName).fileName());
+    m_config = extractOxrayConfig(openVpnData, xrayData);
+    if (m_config.isEmpty()) {
+        m_configFileName.clear();
+        emit importErrorOccurred(ErrorCode::ImportInvalidConfigError, false);
+        return false;
+    }
+
+    checkForMaliciousStrings(m_config);
+    return true;
 }
 
 bool ImportController::extractConfigFromData(QString data)
@@ -180,6 +211,10 @@ bool ImportController::extractConfigFromData(QString data)
     }
     case ConfigTypes::Xray: {
         m_config = extractXrayConfig(config);
+        return m_config.empty() ? false : true;
+    }
+    case ConfigTypes::Oxray: {
+        m_config = extractOxrayNativeConfig(config);
         return m_config.empty() ? false : true;
     }
     case ConfigTypes::Amnezia: {
@@ -586,6 +621,87 @@ QJsonObject ImportController::extractXrayConfig(const QString &data, const QStri
     return config;
 }
 
+QJsonObject ImportController::extractOxrayConfig(const QString &openVpnData, const QString &xrayData)
+{
+    const auto openVpnConfig = extractOpenVpnConfig(openVpnData);
+    if (openVpnConfig.isEmpty()) {
+        return {};
+    }
+
+    m_configType = ConfigTypes::Xray;
+    const auto xrayConfig = extractXrayConfig(xrayData);
+    if (xrayConfig.isEmpty()) {
+        return {};
+    }
+
+    const auto openVpnContainers = openVpnConfig.value(config_key::containers).toArray();
+    const auto xrayContainers = xrayConfig.value(config_key::containers).toArray();
+    if (openVpnContainers.isEmpty() || xrayContainers.isEmpty()) {
+        return {};
+    }
+
+    const auto openVpnContainer = openVpnContainers.at(0).toObject();
+    const auto xrayContainer = xrayContainers.at(0).toObject();
+
+    QJsonObject oxrayContainer;
+    oxrayContainer.insert(config_key::container, ContainerProps::containerToString(DockerContainer::OXray));
+
+    auto openVpnProtocol = openVpnContainer.value(config_key::openvpn).toObject();
+    openVpnProtocol.insert(config_key::hostName, openVpnConfig.value(config_key::hostName).toString());
+    oxrayContainer.insert(config_key::openvpn, openVpnProtocol);
+
+    auto xrayProtocol = xrayContainer.value(config_key::xray).toObject();
+    xrayProtocol.insert(config_key::hostName, xrayConfig.value(config_key::hostName).toString());
+    oxrayContainer.insert(config_key::xray, xrayProtocol);
+
+    QJsonObject config;
+    config.insert(config_key::containers, QJsonArray { oxrayContainer });
+    config.insert(config_key::defaultContainer, ContainerProps::containerToString(DockerContainer::OXray));
+    config.insert(config_key::description, m_settings->nextAvailableServerName());
+    config.insert(config_key::hostName, openVpnConfig.value(config_key::hostName).toString());
+
+    const auto dns1 = openVpnConfig.value(config_key::dns1).toString();
+    const auto dns2 = openVpnConfig.value(config_key::dns2).toString();
+    if (!dns1.isEmpty()) {
+        config.insert(config_key::dns1, dns1);
+    }
+    if (!dns2.isEmpty()) {
+        config.insert(config_key::dns2, dns2);
+    }
+
+    return config;
+}
+
+QJsonObject ImportController::extractOxrayNativeConfig(const QString &data)
+{
+    const auto nativeConfig = QJsonDocument::fromJson(data.toUtf8()).object();
+    if (nativeConfig.value("format").toString() != "amnezia-oxray-native") {
+        return {};
+    }
+
+    const auto openVpnConfig = nativeConfig.value("openvpnConfig").toString();
+    const auto xrayConfigObject = nativeConfig.value("xrayConfig").toObject();
+    if (openVpnConfig.isEmpty() || xrayConfigObject.isEmpty()) {
+        return {};
+    }
+
+    auto config = extractOxrayConfig(
+            openVpnConfig,
+            QString(QJsonDocument(xrayConfigObject).toJson(QJsonDocument::Compact)));
+    if (config.isEmpty()) {
+        return {};
+    }
+
+    const auto description = nativeConfig.value(config_key::description).toString();
+    if (!description.isEmpty()) {
+        config.insert(config_key::description, description);
+    }
+    config.insert(config_key::useCustomDns, nativeConfig.value(config_key::useCustomDns).toBool());
+    config.insert(config_key::dns1, nativeConfig.value(config_key::dns1).toString());
+    config.insert(config_key::dns2, nativeConfig.value(config_key::dns2).toString());
+    return config;
+}
+
 #ifdef Q_OS_ANDROID
 static QMutex qrDecodeMutex;
 
@@ -701,10 +817,10 @@ void ImportController::checkForMaliciousStrings(const QJsonObject &serverConfig)
         auto containerName = containerConfig[config_key::container].toString();
         if ((containerName == ContainerProps::containerToString(DockerContainer::OpenVpn))
             || (containerName == ContainerProps::containerToString(DockerContainer::Cloak))
-            || (containerName == ContainerProps::containerToString(DockerContainer::ShadowSocks))) {
+            || (containerName == ContainerProps::containerToString(DockerContainer::ShadowSocks))
+            || (containerName == ContainerProps::containerToString(DockerContainer::OXray))) {
 
-            QString protocolConfig =
-                    containerConfig[ProtocolProps::protoToString(Proto::OpenVpn)].toObject()[config_key::last_config].toString();
+            QString protocolConfig = containerConfig[ProtocolProps::protoToString(Proto::OpenVpn)].toObject()[config_key::last_config].toString();
             QString protocolConfigJson = QJsonDocument::fromJson(protocolConfig.toUtf8()).object()[config_key::config].toString();
 
             // https://github.com/OpenVPN/openvpn/blob/master/doc/man-sections/script-options.rst

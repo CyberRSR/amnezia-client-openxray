@@ -8,7 +8,7 @@ ProtocolsModel::ProtocolsModel(std::shared_ptr<Settings> settings, QObject *pare
 int ProtocolsModel::rowCount(const QModelIndex &parent) const
 {
     Q_UNUSED(parent);
-    return m_content.size();
+    return m_protocolKeys.size();
 }
 
 QHash<int, QByteArray> ProtocolsModel::roleNames() const
@@ -27,21 +27,36 @@ QHash<int, QByteArray> ProtocolsModel::roleNames() const
 
 QVariant ProtocolsModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() < 0 || index.row() >= m_content.size()) {
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_protocolKeys.size()) {
         return QVariant();
     }
 
+    const QString protocolKey = m_protocolKeys.at(index.row());
+    const auto protocol = ProtocolProps::protoFromString(protocolKey);
+
     switch (role) {
     case ProtocolNameRole: {
-        amnezia::Proto proto = ProtocolProps::protoFromString(m_content.keys().at(index.row()));
-        return ProtocolProps::protocolHumanNames().value(proto);
+        return ProtocolProps::protocolHumanNames().value(protocol);
     }
     case ServerProtocolPageRole:
-        return static_cast<int>(serverProtocolPage(ProtocolProps::protoFromString(m_content.keys().at(index.row()))));
+        return static_cast<int>(serverProtocolPage(protocol));
     case ClientProtocolPageRole:
-        return static_cast<int>(clientProtocolPage(ProtocolProps::protoFromString(m_content.keys().at(index.row()))));
-    case ProtocolIndexRole: return ProtocolProps::protoFromString(m_content.keys().at(index.row()));
+        return static_cast<int>(clientProtocolPage(protocol));
+    case ProtocolIndexRole: return protocol;
     case RawConfigRole: {
+        if (m_container == DockerContainer::OXray) {
+            const auto openVpnConfig =
+                    QJsonDocument::fromJson(m_content.value(config_key::openvpn).toObject().value(config_key::last_config).toString().toUtf8())
+                            .object()
+                            .value(config_key::config)
+                            .toString();
+            const auto xrayConfig = m_content.value(config_key::xray).toObject().value(config_key::last_config).toString();
+            return QString("%1\n\n%2\n\n%3\n\n%4")
+                    .arg(QObject::tr("OpenVPN config:"))
+                    .arg(openVpnConfig)
+                    .arg(QObject::tr("XRay config:"))
+                    .arg(xrayConfig);
+        }
         auto protocolConfig = m_content.value(ContainerProps::containerTypeToProtocolString(m_container)).toObject();
         auto lastConfigJsonDoc =
                 QJsonDocument::fromJson(protocolConfig.value(config_key::last_config).toString().toUtf8());
@@ -55,6 +70,10 @@ QVariant ProtocolsModel::data(const QModelIndex &index, int role) const
         return rawConfig;
     }
     case IsClientProtocolExistsRole: {
+        if (m_container == DockerContainer::OXray) {
+            return !m_content.value(config_key::openvpn).toObject().value(config_key::last_config).toString().isEmpty()
+                   && !m_content.value(config_key::xray).toObject().value(config_key::last_config).toString().isEmpty();
+        }
         QString protocolKey = ContainerProps::containerTypeToProtocolString(m_container);
         auto protocolConfig = m_content.value(protocolKey).toObject();
         auto lastConfigJsonDoc =
@@ -71,10 +90,16 @@ QVariant ProtocolsModel::data(const QModelIndex &index, int role) const
 
 void ProtocolsModel::updateModel(const QJsonObject &content)
 {
+    beginResetModel();
     m_container = ContainerProps::containerFromString(content.value(config_key::container).toString());
 
     m_content = content;
     m_content.remove(config_key::container);
+    m_protocolKeys = m_content.keys();
+    if (m_container == DockerContainer::OXray) {
+        m_protocolKeys = { ProtocolProps::protoToString(Proto::OXray) };
+    }
+    endResetModel();
 }
 
 QJsonObject ProtocolsModel::getConfig()
@@ -95,6 +120,7 @@ PageLoader::PageEnum ProtocolsModel::serverProtocolPage(Proto protocol) const
     case Proto::Ikev2: return PageLoader::PageEnum::PageProtocolIKev2Settings;
     case Proto::L2tp: return PageLoader::PageEnum::PageProtocolIKev2Settings;
     case Proto::Xray: return PageLoader::PageEnum::PageProtocolXraySettings;
+    case Proto::OXray: return PageLoader::PageEnum::PageProtocolOxraySettings;
     
     // non-vpn
     case Proto::TorWebSite: return PageLoader::PageEnum::PageServiceTorWebsiteSettings;

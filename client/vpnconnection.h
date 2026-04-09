@@ -3,9 +3,11 @@
 
 #include <QObject>
 #include <QMetaObject>
+#include <QNetworkAccessManager>
 #include <QString>
 #include <QScopedPointer>
 #include <QRemoteObjectNode>
+#include <QSet>
 #include <QTimer>
 
 #include "protocols/vpnprotocol.h"
@@ -64,6 +66,11 @@ protected slots:
 
     void setConnectionState(Vpn::ConnectionState state);
 
+#ifdef AMNEZIA_DESKTOP
+    void runHealthCheck();
+    void onHealthCheckReplyFinished();
+#endif
+
 protected:
     QSharedPointer<VpnProtocol> m_vpnProtocol;
 
@@ -75,6 +82,16 @@ private:
 
     // Only for iOS for now, check counters
     QTimer m_checkTimer;
+#ifdef AMNEZIA_DESKTOP
+    QTimer m_healthCheckTimer;
+    QNetworkAccessManager *m_healthCheckManager = nullptr;
+    QSet<QNetworkReply *> m_healthCheckReplies;
+    quint64 m_healthCheckRoundId = 0;
+    int m_pendingHealthCheckReplies = 0;
+    int m_failedHealthCheckRounds = 0;
+    bool m_healthCheckRoundActive = false;
+    bool m_healthCheckRoundSucceeded = false;
+#endif
 
 #ifdef Q_OS_ANDROID
    AndroidVpnProtocol* androidVpnProtocol = nullptr;
@@ -89,6 +106,13 @@ private:
 
    void appendSplitTunnelingConfig();
    void appendKillSwitchConfig();
+
+#ifdef AMNEZIA_DESKTOP
+   void startHealthCheckMonitor();
+   void stopHealthCheckMonitor();
+   void abortHealthCheckReplies();
+   void finalizeHealthCheckRound();
+#endif
 };
 
 #endif // VPNCONNECTION_H

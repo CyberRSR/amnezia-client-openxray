@@ -24,6 +24,7 @@ namespace amnezia
             ShadowSocks,
             Ipsec,
             Xray,
+            OXray,
             SSXray,
 
             // non-vpn

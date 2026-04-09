@@ -14,6 +14,7 @@ android {
 dependencies {
     compileOnly(project(":utils"))
     compileOnly(project(":protocolApi"))
+    compileOnly(project(":openvpn"))
     implementation(project(":xray:libXray"))
     implementation(libs.kotlinx.coroutines)
 }

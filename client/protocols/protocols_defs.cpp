@@ -73,6 +73,7 @@ QMap<amnezia::Proto, QString> ProtocolProps::protocolHumanNames()
              { Proto::Ikev2, "IKEv2" },
              { Proto::L2tp, "L2TP" },
              { Proto::Xray, "XRay" },
+             { Proto::OXray, "OXray" },
              { Proto::SSXray, "Shadowsocks"},
 
 
@@ -100,6 +101,7 @@ amnezia::ServiceType ProtocolProps::protocolService(Proto p)
     case Proto::Awg: return ServiceType::Vpn;
     case Proto::Ikev2: return ServiceType::Vpn;
     case Proto::Xray: return ServiceType::Vpn;
+    case Proto::OXray: return ServiceType::Vpn;
 
     case Proto::TorWebSite: return ServiceType::Other;
     case Proto::Dns: return ServiceType::Other;
@@ -133,6 +135,7 @@ int ProtocolProps::defaultPort(Proto p)
     case Proto::WireGuard: return QString(protocols::wireguard::defaultPort).toInt();
     case Proto::Awg: return QString(protocols::awg::defaultPort).toInt();
     case Proto::Xray: return QString(protocols::xray::defaultPort).toInt();
+    case Proto::OXray: return QString(protocols::openvpn::defaultPort).toInt();
     case Proto::Ikev2: return -1;
     case Proto::L2tp: return -1;
 
@@ -156,6 +159,7 @@ bool ProtocolProps::defaultPortChangeable(Proto p)
     case Proto::Ikev2: return false;
     case Proto::L2tp: return false;
     case Proto::Xray: return true;
+    case Proto::OXray: return false;
 
     case Proto::TorWebSite: return false;
     case Proto::Dns: return false;
@@ -177,6 +181,7 @@ TransportProto ProtocolProps::defaultTransportProto(Proto p)
     case Proto::Ikev2: return TransportProto::Udp;
     case Proto::L2tp: return TransportProto::Udp;
     case Proto::Xray: return TransportProto::Tcp;
+    case Proto::OXray: return TransportProto::Tcp;
 
     // non-vpn
     case Proto::TorWebSite: return TransportProto::Tcp;
@@ -198,6 +203,7 @@ bool ProtocolProps::defaultTransportProtoChangeable(Proto p)
     case Proto::Ikev2: return false;
     case Proto::L2tp: return false;
     case Proto::Xray: return false;
+    case Proto::OXray: return false;
 
     // non-vpn
     case Proto::TorWebSite: return false;

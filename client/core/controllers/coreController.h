@@ -39,6 +39,7 @@
 #include "ui/models/clientManagementModel.h"
 #include "ui/models/protocols/awgConfigModel.h"
 #include "ui/models/protocols/openvpnConfigModel.h"
+#include "ui/models/protocols/oxrayConfigModel.h"
 #include "ui/models/protocols/shadowsocksConfigModel.h"
 #include "ui/models/protocols/wireguardConfigModel.h"
 #include "ui/models/protocols/xrayConfigModel.h"
@@ -138,6 +139,7 @@ private:
     QSharedPointer<ApiDevicesModel> m_apiDevicesModel;
 
     QScopedPointer<OpenVpnConfigModel> m_openVpnConfigModel;
+    QScopedPointer<OxrayConfigModel> m_oxrayConfigModel;
     QScopedPointer<ShadowSocksConfigModel> m_shadowSocksConfigModel;
     QScopedPointer<CloakConfigModel> m_cloakConfigModel;
     QScopedPointer<XrayConfigModel> m_xrayConfigModel;

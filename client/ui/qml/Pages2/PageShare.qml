@@ -26,7 +26,8 @@ PageType {
         Awg,
         ShadowSocks,
         Cloak,
-        Xray
+        Xray,
+        Oxray
     }
 
     Connections {
@@ -94,6 +95,13 @@ PageType {
                 configFileName = "amnezia_for_xray"
                 break
             }
+            case PageShare.ConfigType.Oxray: {
+                ExportController.generateOxrayNativeConfig()
+                configCaption = qsTr("Save OXray native config")
+                configExtension = ".json"
+                configFileName = "amnezia_for_oxray_native"
+                break
+            }
             }
 
             PageController.showBusyIndicator(false)
@@ -149,6 +157,11 @@ PageType {
         id: xrayConnectionFormat
         readonly property string name: qsTr("XRay native format")
         readonly property int type: PageShare.ConfigType.Xray
+    }
+    QtObject {
+        id: oxrayConnectionFormat
+        readonly property string name: qsTr("OXray native format")
+        readonly property int type: PageShare.ConfigType.Oxray
     }
 
     FlickableType {
@@ -470,6 +483,8 @@ PageType {
                             root.connectionTypesModel.push(cloakConnectionFormat)
                         } else if (index === ContainerProps.containerFromString("amnezia-xray")) {
                             root.connectionTypesModel.push(xrayConnectionFormat)
+                        } else if (index === ContainerProps.containerFromString("amnezia-oxray")) {
+                            root.connectionTypesModel.push(oxrayConnectionFormat)
                         }
                     }
                 }

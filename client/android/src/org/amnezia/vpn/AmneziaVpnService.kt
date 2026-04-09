@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
 import android.net.VpnService
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -47,6 +48,7 @@ import org.amnezia.vpn.protocol.ProtocolState.DISCONNECTED
 import org.amnezia.vpn.protocol.ProtocolState.DISCONNECTING
 import org.amnezia.vpn.protocol.ProtocolState.RECONNECTING
 import org.amnezia.vpn.protocol.ProtocolState.UNKNOWN
+import org.amnezia.vpn.protocol.Status
 import org.amnezia.vpn.protocol.VpnException
 import org.amnezia.vpn.protocol.VpnStartException
 import org.amnezia.vpn.protocol.putStatus
@@ -76,6 +78,10 @@ private const val PREFS_SERVER_INDEX = "LAST_SERVER_INDEX"
 private const val TRAFFIC_STATS_UPDATE_TIMEOUT = 1000L
 private const val DISCONNECT_TIMEOUT = 5000L
 private const val STOP_SERVICE_TIMEOUT = 5000L
+private const val UNEXPECTED_DISCONNECT_RECOVERY_DELAY_MS = 1500L
+private const val UNEXPECTED_DISCONNECT_RECOVERY_MAX_ATTEMPTS = 4
+private const val SLEEP_GUARD_WAKE_LOCK_TAG = "AmneziaVPN:SleepGuard"
+private const val SLEEP_GUARD_WIFI_LOCK_TAG = "AmneziaVPN:WifiGuard"
 
 @SuppressLint("Registered")
 open class AmneziaVpnService : VpnService() {
@@ -85,6 +91,7 @@ open class AmneziaVpnService : VpnService() {
     private var isServiceBound = false
     private var vpnProto: VpnProto? = null
     private var protocolState = MutableStateFlow(UNKNOWN)
+    private var currentStatus = Status.build { setState(UNKNOWN) }
     private var serverName: String? = null
     private var serverIndex: Int = -1
 
@@ -107,7 +114,14 @@ open class AmneziaVpnService : VpnService() {
     private var notificationStateReceiver: BroadcastReceiver? = null
     private var screenOnReceiver: BroadcastReceiver? = null
     private var screenOffReceiver: BroadcastReceiver? = null
+    private var deviceIdleModeReceiver: BroadcastReceiver? = null
     private val clientMessengers = ConcurrentHashMap<Messenger, IpcMessenger>()
+    private var pendingStopServiceJob: Job? = null
+    private var unexpectedDisconnectRecoveryJob: Job? = null
+    private var unexpectedDisconnectRecoveryAttempts = 0
+    private var disconnectRequested = false
+    private var sleepGuardWakeLock: PowerManager.WakeLock? = null
+    private var sleepGuardWifiLock: WifiManager.WifiLock? = null
 
     private val isActivityConnected
         get() = clientMessengers.any { it.value.name == ACTIVITY_MESSENGER_NAME }
@@ -167,7 +181,7 @@ open class AmneziaVpnService : VpnService() {
                         clientMessengers[msg.replyTo]?.let { clientMessenger ->
                             clientMessenger.send {
                                 ServiceEvent.STATUS.packToMessage {
-                                    putStatus(this@AmneziaVpnService.protocolState.value)
+                                    putStatus(currentStatusFor(this@AmneziaVpnService.protocolState.value))
                                 }
                             }
                         }
@@ -231,7 +245,7 @@ open class AmneziaVpnService : VpnService() {
         }
         ServiceCompat.startForeground(
             this, NOTIFICATION_ID,
-            serviceNotification.buildNotification(serverName, vpnProto?.label, protocolState.value),
+            serviceNotification.buildNotification(serverName, vpnProto?.label, currentStatusFor(protocolState.value)),
             foregroundServiceTypeCompat
         )
         return START_REDELIVER_INTENT
@@ -249,7 +263,7 @@ open class AmneziaVpnService : VpnService() {
         if (intent?.action != SERVICE_INTERFACE) {
             if (clientMessengers.isEmpty()) {
                 isServiceBound = false
-                if (isUnknown || isDisconnected) stopService()
+                if (isUnknown || (isDisconnected && disconnectRequested)) stopService()
             }
         }
         return true
@@ -273,6 +287,9 @@ open class AmneziaVpnService : VpnService() {
 
     override fun onDestroy() {
         Log.d(TAG, "Destroy service")
+        cancelPendingStopService()
+        cancelUnexpectedDisconnectRecovery()
+        releaseSleepGuards()
         unregisterBroadcastReceivers()
         runBlocking {
             disconnect()
@@ -285,6 +302,9 @@ open class AmneziaVpnService : VpnService() {
 
     private fun stopService() {
         Log.d(TAG, "Stop service")
+        cancelPendingStopService()
+        cancelUnexpectedDisconnectRecovery()
+        releaseSleepGuards()
         // the coroutine below will be canceled during the onDestroy call
         mainScope.launch {
             delay(STOP_SERVICE_TIMEOUT)
@@ -330,14 +350,28 @@ open class AmneziaVpnService : VpnService() {
     }
 
     private fun registerScreenStateBroadcastReceivers() {
-        if (serviceNotification.isNotificationEnabled()) {
-            Log.d(TAG, "Register screen state broadcast receivers")
-            screenOnReceiver = registerBroadcastReceiver(Intent.ACTION_SCREEN_ON) {
-                if (isConnected && serviceNotification.isNotificationEnabled()) startTrafficStatsUpdateJob()
-            }
+        if (screenOnReceiver != null || screenOffReceiver != null || deviceIdleModeReceiver != null) return
 
-            screenOffReceiver = registerBroadcastReceiver(Intent.ACTION_SCREEN_OFF) {
-                stopTrafficStatsUpdateJob()
+        Log.d(TAG, "Register screen state broadcast receivers")
+        screenOnReceiver = registerBroadcastReceiver(Intent.ACTION_SCREEN_ON) {
+            if (isConnected && serviceNotification.isNotificationEnabled()) startTrafficStatsUpdateJob()
+            handleWakeOrResume("screen on")
+        }
+
+        screenOffReceiver = registerBroadcastReceiver(Intent.ACTION_SCREEN_OFF) {
+            stopTrafficStatsUpdateJob()
+            updateSleepGuards()
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            deviceIdleModeReceiver = registerBroadcastReceiver(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED) {
+                val isIdle = getSystemService<PowerManager>()?.isDeviceIdleMode == true
+                Log.d(TAG, "Device idle mode changed: idle=$isIdle")
+                if (isIdle) {
+                    updateSleepGuards()
+                } else {
+                    handleWakeOrResume("device idle ended")
+                }
             }
         }
     }
@@ -346,8 +380,10 @@ open class AmneziaVpnService : VpnService() {
         Log.d(TAG, "Unregister screen state broadcast receivers")
         unregisterBroadcastReceiver(screenOnReceiver)
         unregisterBroadcastReceiver(screenOffReceiver)
+        unregisterBroadcastReceiver(deviceIdleModeReceiver)
         screenOnReceiver = null
         screenOffReceiver = null
+        deviceIdleModeReceiver = null
     }
 
     private fun unregisterBroadcastReceivers() {
@@ -367,12 +403,13 @@ open class AmneziaVpnService : VpnService() {
             // drop first default UNKNOWN state
             protocolState.drop(1).collect { protocolState ->
                 Log.d(TAG, "Protocol state changed: $protocolState")
+                currentStatus = currentStatusFor(protocolState)
 
-                serviceNotification.updateNotification(serverName, vpnProto?.label, protocolState)
+                serviceNotification.updateNotification(serverName, vpnProto?.label, currentStatus)
 
                 clientMessengers.send {
                     ServiceEvent.STATUS_CHANGED.packToMessage {
-                        putStatus(protocolState)
+                        putStatus(currentStatus)
                     }
                 }
 
@@ -380,30 +417,57 @@ open class AmneziaVpnService : VpnService() {
 
                 when (protocolState) {
                     CONNECTED -> {
+                        cancelPendingStopService()
+                        cancelUnexpectedDisconnectRecovery()
+                        unexpectedDisconnectRecoveryAttempts = 0
                         networkState.bindNetworkListener()
                         // if (isActivityConnected) launchSendingStatistics()
                         launchTrafficStatsUpdate()
+                        updateSleepGuards()
                     }
 
                     DISCONNECTED -> {
                         networkState.unbindNetworkListener()
                         stopTrafficStatsUpdateJob()
                         // stopSendingStatistics()
-                        if (!isServiceBound) stopService()
+                        updateSleepGuards()
+                        if (disconnectRequested) {
+                            cancelUnexpectedDisconnectRecovery()
+                            unexpectedDisconnectRecoveryAttempts = 0
+                            if (!isServiceBound) stopService()
+                        } else if (hasSavedConfig()) {
+                            scheduleUnexpectedDisconnectRecovery("Protocol disconnected unexpectedly")
+                        } else if (!isServiceBound) {
+                            stopService()
+                        }
                     }
 
                     DISCONNECTING -> {
+                        cancelPendingStopService()
+                        cancelUnexpectedDisconnectRecovery()
                         networkState.unbindNetworkListener()
                         stopTrafficStatsUpdateJob()
                         // stopSendingStatistics()
+                        updateSleepGuards()
                     }
 
                     RECONNECTING -> {
+                        cancelPendingStopService()
+                        cancelUnexpectedDisconnectRecovery()
                         stopTrafficStatsUpdateJob()
                         // stopSendingStatistics()
+                        updateSleepGuards()
                     }
 
-                    CONNECTING, UNKNOWN -> {}
+                    CONNECTING -> {
+                        cancelPendingStopService()
+                        cancelUnexpectedDisconnectRecovery()
+                        updateSleepGuards()
+                    }
+
+                    UNKNOWN -> {
+                        updateSleepGuards()
+                    }
                 }
             }
         }
@@ -432,14 +496,12 @@ open class AmneziaVpnService : VpnService() {
 
     @MainThread
     private fun enableNotification() {
-        registerScreenStateBroadcastReceivers()
-        serviceNotification.updateNotification(serverName, vpnProto?.label, protocolState.value)
+        serviceNotification.updateNotification(serverName, vpnProto?.label, currentStatusFor(protocolState.value))
         launchTrafficStatsUpdate()
     }
 
     @MainThread
     private fun disableNotification() {
-        unregisterScreenStateBroadcastReceivers()
         stopTrafficStatsUpdateJob()
     }
 
@@ -482,6 +544,9 @@ open class AmneziaVpnService : VpnService() {
 
     @MainThread
     private fun connect(vpnConfig: String? = null) {
+        disconnectRequested = false
+        cancelPendingStopService()
+        cancelUnexpectedDisconnectRecovery()
         if (vpnConfig == null) {
             connectToVpn(Prefs.load(PREFS_CONFIG_KEY))
         } else {
@@ -512,7 +577,9 @@ open class AmneziaVpnService : VpnService() {
             return
         }
 
+        disconnectRequested = false
         protocolState.value = CONNECTING
+        currentStatus = currentStatusFor(CONNECTING)
 
         if (!checkPermission()) {
             protocolState.value = DISCONNECTED
@@ -524,7 +591,7 @@ open class AmneziaVpnService : VpnService() {
             disconnectionJob = null
 
             vpnProto?.protocol?.let { protocol ->
-                protocol.initialize(applicationContext, protocolState, ::onError)
+                protocol.initialize(this@AmneziaVpnService, protocolState, ::onError, ::onProtocolStatusChanged)
                 protocol.startVpn(config, Builder(), ::protect)
             }
         }
@@ -536,6 +603,9 @@ open class AmneziaVpnService : VpnService() {
 
         Log.d(TAG, "Stop VPN connection")
 
+        disconnectRequested = true
+        cancelUnexpectedDisconnectRecovery()
+        unexpectedDisconnectRecoveryAttempts = 0
         protocolState.value = DISCONNECTING
 
         disconnectionJob = connectionScope.launch {
@@ -562,6 +632,9 @@ open class AmneziaVpnService : VpnService() {
 
         Log.d(TAG, "Reconnect VPN")
 
+        disconnectRequested = false
+        cancelPendingStopService()
+        cancelUnexpectedDisconnectRecovery()
         protocolState.value = RECONNECTING
 
         connectionJob = connectionScope.launch {
@@ -579,6 +652,42 @@ open class AmneziaVpnService : VpnService() {
                 ServiceEvent.ERROR.packToMessage {
                     putString(MSG_ERROR, msg)
                 }
+            }
+        }
+    }
+
+    private fun onProtocolStatusChanged(status: Status) {
+        currentStatus = Status.build {
+            setState(protocolState.value)
+            setMessage(status.message)
+            setSteps(status.steps)
+        }
+        mainScope.launch {
+            serviceNotification.updateNotification(serverName, vpnProto?.label, currentStatus)
+            clientMessengers.send {
+                ServiceEvent.STATUS_CHANGED.packToMessage {
+                    putStatus(currentStatus)
+                }
+            }
+        }
+    }
+
+    private fun currentStatusFor(state: org.amnezia.vpn.protocol.ProtocolState): Status {
+        return if (currentStatus.steps.isEmpty()) {
+            Status.build {
+                setState(state)
+                setMessage(getString(state))
+            }
+        } else if (state == DISCONNECTED || state == DISCONNECTING || state == UNKNOWN) {
+            Status.build {
+                setState(state)
+                setMessage(getString(state))
+            }
+        } else {
+            Status.build {
+                setState(state)
+                setMessage(currentStatus.message.ifBlank { getString(state) })
+                setSteps(currentStatus.steps)
             }
         }
     }
@@ -607,6 +716,119 @@ open class AmneziaVpnService : VpnService() {
         serverName = Prefs.load<String>(PREFS_SERVER_NAME).ifBlank { null }
         if (serverName != null) serverIndex = Prefs.load(PREFS_SERVER_INDEX)
         Log.d(TAG, "Load server data: ($serverIndex, $serverName)")
+    }
+
+    private fun hasSavedConfig(): Boolean = Prefs.load<String>(PREFS_CONFIG_KEY).isNotBlank()
+
+    @MainThread
+    private fun cancelPendingStopService() {
+        pendingStopServiceJob?.cancel()
+        pendingStopServiceJob = null
+    }
+
+    @MainThread
+    private fun cancelUnexpectedDisconnectRecovery() {
+        unexpectedDisconnectRecoveryJob?.cancel()
+        unexpectedDisconnectRecoveryJob = null
+    }
+
+    @MainThread
+    private fun scheduleUnexpectedDisconnectRecovery(reason: String) {
+        if (disconnectRequested || !hasSavedConfig()) {
+            if (!isServiceBound) stopService()
+            return
+        }
+        if (unexpectedDisconnectRecoveryAttempts >= UNEXPECTED_DISCONNECT_RECOVERY_MAX_ATTEMPTS) {
+            Log.w(TAG, "Unexpected disconnect recovery exhausted after $unexpectedDisconnectRecoveryAttempts attempts")
+            if (!isServiceBound) stopService()
+            return
+        }
+
+        cancelUnexpectedDisconnectRecovery()
+        updateSleepGuards()
+        unexpectedDisconnectRecoveryJob = mainScope.launch {
+            delay(UNEXPECTED_DISCONNECT_RECOVERY_DELAY_MS)
+            if (disconnectRequested || protocolState.value != DISCONNECTED || !hasSavedConfig()) {
+                return@launch
+            }
+
+            unexpectedDisconnectRecoveryAttempts += 1
+            Log.w(
+                TAG,
+                "Unexpected disconnect recovery attempt " +
+                    "$unexpectedDisconnectRecoveryAttempts/$UNEXPECTED_DISCONNECT_RECOVERY_MAX_ATTEMPTS: $reason"
+            )
+            connect()
+        }
+    }
+
+    @MainThread
+    private fun handleWakeOrResume(reason: String) {
+        updateSleepGuards()
+        when (protocolState.value) {
+            CONNECTED -> vpnProto?.protocol?.requestConnectionCheck(reason)
+            DISCONNECTED -> scheduleUnexpectedDisconnectRecovery("Wake check requested: $reason")
+            else -> Unit
+        }
+    }
+
+    private fun shouldHoldSleepGuards(): Boolean {
+        if (disconnectRequested) return false
+
+        return when (protocolState.value) {
+            CONNECTING, CONNECTED, RECONNECTING -> true
+            DISCONNECTED -> hasSavedConfig() && unexpectedDisconnectRecoveryAttempts < UNEXPECTED_DISCONNECT_RECOVERY_MAX_ATTEMPTS
+            DISCONNECTING, UNKNOWN -> false
+        }
+    }
+
+    @MainThread
+    private fun updateSleepGuards() {
+        val powerManager = getSystemService<PowerManager>() ?: return
+        val shouldHold = !powerManager.isInteractive && shouldHoldSleepGuards()
+        if (shouldHold) {
+            acquireSleepGuards(powerManager)
+        } else {
+            releaseSleepGuards()
+        }
+    }
+
+    private fun acquireSleepGuards(powerManager: PowerManager) {
+        val wakeLock = sleepGuardWakeLock ?: powerManager
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, SLEEP_GUARD_WAKE_LOCK_TAG)
+            .apply { setReferenceCounted(false) }
+            .also { sleepGuardWakeLock = it }
+
+        if (!wakeLock.isHeld) {
+            Log.d(TAG, "Acquire sleep guard wake lock")
+            wakeLock.acquire()
+        }
+
+        val wifiManager = applicationContext.getSystemService<WifiManager>()
+        val wifiLock = sleepGuardWifiLock ?: wifiManager
+            ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, SLEEP_GUARD_WIFI_LOCK_TAG)
+            ?.apply { setReferenceCounted(false) }
+            ?.also { sleepGuardWifiLock = it }
+
+        if (wifiLock != null && !wifiLock.isHeld) {
+            Log.d(TAG, "Acquire sleep guard Wi-Fi lock")
+            wifiLock.acquire()
+        }
+    }
+
+    private fun releaseSleepGuards() {
+        sleepGuardWakeLock?.let { wakeLock ->
+            if (wakeLock.isHeld) {
+                Log.d(TAG, "Release sleep guard wake lock")
+                wakeLock.release()
+            }
+        }
+        sleepGuardWifiLock?.let { wifiLock ->
+            if (wifiLock.isHeld) {
+                Log.d(TAG, "Release sleep guard Wi-Fi lock")
+                wifiLock.release()
+            }
+        }
     }
 
     private fun checkPermission(): Boolean =

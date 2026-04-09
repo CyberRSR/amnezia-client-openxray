@@ -195,6 +195,7 @@
         <file>ui/qml/Pages2/PageProtocolAwgSettings.qml</file>
         <file>ui/qml/Pages2/PageProtocolCloakSettings.qml</file>
         <file>ui/qml/Pages2/PageProtocolOpenVpnSettings.qml</file>
+        <file>ui/qml/Pages2/PageProtocolOxraySettings.qml</file>
         <file>ui/qml/Pages2/PageProtocolRaw.qml</file>
         <file>ui/qml/Pages2/PageProtocolShadowSocksSettings.qml</file>
         <file>ui/qml/Pages2/PageProtocolWireGuardSettings.qml</file>

@@ -7,6 +7,8 @@
 
 #include "notificationhandler.h"
 
+#include <QColor>
+#include <QIcon>
 #include <QMenu>
 #include <QSystemTrayIcon>
 
@@ -34,7 +36,9 @@ private:
     void setTrayState(Vpn::ConnectionState state);
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
 
-    void setTrayIcon(const QString &iconPath);
+    QIcon createTrayIcon(const QColor &fillColor) const;
+    void setTrayIcon(const QIcon &icon);
+    void updateToolTip(Vpn::ConnectionState state);
 
 private:
     QMenu m_menu;
@@ -47,10 +51,8 @@ private:
     QAction* m_trayActionQuit = nullptr;
     QAction* m_statusLabel = nullptr;    
     QAction* m_separator = nullptr;
-
-    const QString ConnectedTrayIconName = "active.png";
-    const QString DisconnectedTrayIconName = "default.png";
-    const QString ErrorTrayIconName = "error.png";
+    QIcon m_connectedTrayIcon;
+    QIcon m_disconnectedTrayIcon;
     QString  websiteUrl = "https://amnezia.org";
 };
 

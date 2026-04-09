@@ -328,6 +328,72 @@ void ExportController::generateXrayConfig(const QString &clientName)
     emit exportConfigChanged();
 }
 
+void ExportController::generateOxrayConfig()
+{
+    clearPreviousConfig();
+
+    const int serverIndex = m_serversModel->getProcessedServerIndex();
+    QJsonObject serverConfig = m_serversModel->getServerConfig(serverIndex);
+
+    serverConfig.remove(config_key::userName);
+    serverConfig.remove(config_key::password);
+    serverConfig.remove(config_key::port);
+
+    const auto container = static_cast<DockerContainer>(m_containersModel->getProcessedContainerIndex());
+    if (container != DockerContainer::OXray) {
+        emit exportErrorOccurred(ErrorCode::InternalError);
+        return;
+    }
+
+    QJsonObject containerConfig = m_containersModel->getContainerConfig(container);
+    containerConfig.insert(config_key::container, ContainerProps::containerToString(container));
+
+    serverConfig.insert(config_key::containers, QJsonArray { containerConfig });
+    serverConfig.insert(config_key::defaultContainer, ContainerProps::containerToString(container));
+
+    QByteArray compressedConfig = QJsonDocument(serverConfig).toJson();
+    compressedConfig = qCompress(compressedConfig, 8);
+
+    m_config = QString("vpn://%1").arg(QString(compressedConfig.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)));
+    m_qrCodes = qrCodeUtils::generateQrCodeImageSeries(compressedConfig);
+    emit exportConfigChanged();
+}
+
+void ExportController::generateOxrayNativeConfig()
+{
+    clearPreviousConfig();
+
+    const int serverIndex = m_serversModel->getProcessedServerIndex();
+    const auto serverConfig = m_serversModel->getServerConfig(serverIndex);
+    const auto container = static_cast<DockerContainer>(m_containersModel->getProcessedContainerIndex());
+    if (container != DockerContainer::OXray) {
+        emit exportErrorOccurred(ErrorCode::InternalError);
+        return;
+    }
+
+    const auto containerConfig = m_containersModel->getContainerConfig(container);
+    const auto openVpnProtocol = containerConfig.value(config_key::openvpn).toObject();
+    const auto xrayProtocol = containerConfig.value(config_key::xray).toObject();
+    const auto openVpnLastConfig =
+            QJsonDocument::fromJson(openVpnProtocol.value(config_key::last_config).toString().toUtf8()).object();
+    const auto xrayLastConfig =
+            QJsonDocument::fromJson(xrayProtocol.value(config_key::last_config).toString().toUtf8()).object();
+
+    QJsonObject nativeConfig;
+    nativeConfig.insert("format", "amnezia-oxray-native");
+    nativeConfig.insert("version", 1);
+    nativeConfig.insert(config_key::description, serverConfig.value(config_key::description).toString());
+    nativeConfig.insert("openvpnConfig", openVpnLastConfig.value(config_key::config).toString());
+    nativeConfig.insert("xrayConfig", xrayLastConfig);
+    nativeConfig.insert(config_key::useCustomDns, serverConfig.value(config_key::useCustomDns).toBool());
+    nativeConfig.insert(config_key::dns1, serverConfig.value(config_key::dns1).toString());
+    nativeConfig.insert(config_key::dns2, serverConfig.value(config_key::dns2).toString());
+
+    m_config = QString(QJsonDocument(nativeConfig).toJson(QJsonDocument::Indented));
+    m_qrCodes = qrCodeUtils::generateQrCodeImageSeries(m_config.toUtf8());
+    emit exportConfigChanged();
+}
+
 QString ExportController::getConfig()
 {
     return m_config;

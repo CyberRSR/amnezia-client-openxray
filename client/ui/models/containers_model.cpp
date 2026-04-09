@@ -21,6 +21,11 @@ QVariant ContainersModel::data(const QModelIndex &index, int role) const
     DockerContainer container = ContainerProps::allContainers().at(index.row());
     QString protocolKey = ContainerProps::containerTypeToProtocolString(container);
     auto isThirdPartyConfig = m_containers.value(container).value(protocolKey).toObject().value(config_key::isThirdPartyConfig).toBool();
+    if (container == DockerContainer::OXray) {
+        const auto containerConfig = m_containers.value(container);
+        isThirdPartyConfig = containerConfig.value(config_key::openvpn).toObject().value(config_key::isThirdPartyConfig).toBool()
+                             || containerConfig.value(config_key::xray).toObject().value(config_key::isThirdPartyConfig).toBool();
+    }
 
     switch (role) {
     case NameRole: {
@@ -129,7 +134,7 @@ bool ContainersModel::hasInstalledProtocols()
 
 bool ContainersModel::isInstallationAllowed(DockerContainer container)
 {
-    return container != DockerContainer::Awg;
+    return container != DockerContainer::Awg && container != DockerContainer::OXray;
 }
 
 QHash<int, QByteArray> ContainersModel::roleNames() const

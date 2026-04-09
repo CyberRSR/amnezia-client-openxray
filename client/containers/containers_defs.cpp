@@ -68,6 +68,7 @@ QVector<amnezia::Proto> ContainerProps::protocolsForContainer(amnezia::DockerCon
     case DockerContainer::Ipsec: return { Proto::Ikev2 /*, Protocol::L2tp */ };
 
     case DockerContainer::Xray: return { Proto::Xray };
+    case DockerContainer::OXray: return { Proto::OXray };
 
     case DockerContainer::SSXray: return { Proto::SSXray };
 
@@ -104,6 +105,7 @@ QMap<DockerContainer, QString> ContainerProps::containerHumanNames()
              { DockerContainer::Awg, "AmneziaWG" },
              { DockerContainer::Awg2, "AmneziaWG" },
              { DockerContainer::Xray, "XRay" },
+             { DockerContainer::OXray, "OXray" },
              { DockerContainer::Ipsec, QObject::tr("IPsec") },
              { DockerContainer::SSXray, "Shadowsocks"},
 
@@ -135,6 +137,9 @@ QMap<DockerContainer, QString> ContainerProps::containerDescriptions()
              { DockerContainer::Xray,
                QObject::tr("XRay with REALITY masks VPN traffic as web traffic and protects against active probing. "
                            "It is highly resistant to detection and offers high speed.") },
+             { DockerContainer::OXray,
+               QObject::tr("OXray combines OpenVPN and XRay into a double-hop chain. "
+                           "Traffic first goes through an OpenVPN server and then through an XRay server.") },
              { DockerContainer::Ipsec,
                QObject::tr("IKEv2/IPsec -  Modern stable protocol, a bit faster than others, restores connection after "
                            "signal loss. It has native support on the latest versions of Android and iOS.") },
@@ -219,6 +224,13 @@ QMap<DockerContainer, QString> ContainerProps::containerDetailedDescriptions()
                       "* Highly effective in heavily censored regions\n"
                       "* Minimal battery consumption on devices\n"
                       "* Operates over TCP protocol") },
+        { DockerContainer::OXray,
+          QObject::tr("OXray creates a chained connection: device -> OpenVPN server -> XRay server -> internet.\n"
+                      "\nIt is intended for importing two existing client configs and combining them into a single profile inside the app."
+                      "\n\nFeatures:\n"
+                      "* Uses one OpenVPN config and one XRay config\n"
+                      "* Stores and exports the combined profile as a single AmneziaVPN config\n"
+                      "* Available on desktop platforms and Android\n") },
         { DockerContainer::Ipsec,
           QObject::tr("IKEv2, combined with IPSec encryption, is a modern and reliable VPN protocol. "
                       "It reconnects quickly when switching networks or devices, making it ideal for dynamic network environments. "
@@ -257,6 +269,7 @@ Proto ContainerProps::defaultProtocol(DockerContainer c)
     case DockerContainer::Awg2: return Proto::Awg;
     case DockerContainer::Awg: return Proto::Awg;
     case DockerContainer::Xray: return Proto::Xray;
+    case DockerContainer::OXray: return Proto::OXray;
     case DockerContainer::Ipsec: return Proto::Ikev2;
     case DockerContainer::SSXray: return Proto::SSXray;
 
@@ -290,6 +303,7 @@ bool ContainerProps::isSupportedByCurrentPlatform(DockerContainer c)
     case DockerContainer::Awg2: return true;
     case DockerContainer::Awg: return true;
     case DockerContainer::Xray: return true;
+    case DockerContainer::OXray: return false;
     case DockerContainer::Cloak: return true;
     case DockerContainer::SSXray: return true;
         //    case DockerContainer::ShadowSocks: return true;
@@ -316,6 +330,7 @@ bool ContainerProps::isSupportedByCurrentPlatform(DockerContainer c)
     switch (c) {
     case DockerContainer::WireGuard: return true;
     case DockerContainer::Ipsec: return false;
+    case DockerContainer::OXray: return true;
     default: return true;
     }
 
@@ -328,6 +343,7 @@ bool ContainerProps::isSupportedByCurrentPlatform(DockerContainer c)
     case DockerContainer::Awg: return true;
     case DockerContainer::Cloak: return true;
     case DockerContainer::Xray: return true;
+    case DockerContainer::OXray: return true;
     case DockerContainer::SSXray: return true;
     default: return false;
     }
@@ -335,6 +351,7 @@ bool ContainerProps::isSupportedByCurrentPlatform(DockerContainer c)
 #elif defined(Q_OS_LINUX)
     switch (c) {
     case DockerContainer::Ipsec: return false;
+    case DockerContainer::OXray: return true;
     default: return true;
     }
 
@@ -420,6 +437,7 @@ int ContainerProps::installPageOrder(DockerContainer container)
     case DockerContainer::WireGuard: return 2;
     case DockerContainer::Awg2: return 1;
     case DockerContainer::Xray: return 3;
+    case DockerContainer::OXray: return 0;
     case DockerContainer::Ipsec: return 7;
     case DockerContainer::SSXray: return 8;
     default: return 0;

@@ -36,6 +36,8 @@ android {
     defaultConfig {
         applicationId = "org.amnezia.vpn"
         targetSdk = qtTargetSdkVersion.toInt()
+        manifestPlaceholders["appLabel"] = "AmneziaVPN"
+        manifestPlaceholders["qtLibName"] = "AmneziaVPN"
 
         // keeps language resources for only the locales specified below
         resourceConfigurations += listOf("en", "ru", "b+zh+Hans")
@@ -62,6 +64,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debugx"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "AmneziaVPN Debug"
+            manifestPlaceholders["qtLibName"] = "AmneziaVPN"
+        }
+
         release {
             // exclude coroutine debug resource from release build
             packaging {
