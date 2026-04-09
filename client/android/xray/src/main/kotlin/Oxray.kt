@@ -672,7 +672,19 @@ class Oxray : Protocol() {
         val defaultIndex = routingStrategies.indexOfFirst { it.name == "plain+protect" }
             .takeIf { connectionTransportKey == "CELLULAR" && it >= 0 }
             ?: 0
-        val preferredIndex = loadPreferredStrategyIndex(config) ?: defaultIndex
+        val preferredIndex = if (connectionTransportKey == "CELLULAR") {
+            val savedIndex = loadPreferredStrategyIndex(config)
+            if (savedIndex != null && savedIndex != defaultIndex) {
+                Log.i(
+                    TAG,
+                    "Ignoring saved OXray strategy '${routingStrategies[savedIndex].name}' on CELLULAR; " +
+                        "forcing '${routingStrategies[defaultIndex].name}' first"
+                )
+            }
+            defaultIndex
+        } else {
+            loadPreferredStrategyIndex(config) ?: defaultIndex
+        }
         val sequence = buildList {
             add(preferredIndex)
             routingStrategies.indices
