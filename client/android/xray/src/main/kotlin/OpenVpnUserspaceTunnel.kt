@@ -51,10 +51,10 @@ import org.json.JSONObject
 private const val USERSACE_TAG = "OpenVpnUserspace"
 private const val OPENVPN_USERSACE_CONNECT_TIMEOUT_MS = 45_000L
 private const val TCP_CONNECT_TIMEOUT_MS = 15_000L
-private const val TCP_ACK_TIMEOUT_MS = 4_000L
-private const val TCP_MSS = 1120
+private const val TCP_ACK_TIMEOUT_MS = 8_000L
+private const val TCP_MSS = 960
 private const val TCP_ADVERTISED_WINDOW = 0xffff
-private const val TCP_SEND_WINDOW_BYTES = 32 * TCP_MSS
+private const val TCP_SEND_WINDOW_BYTES = 64 * TCP_MSS
 private const val TCP_SEND_RETRIES = 4
 private const val TCP_RECEIVE_QUEUE_CHUNKS = 65_536
 private const val TCP_RECEIVE_BUFFER_BYTES = 16 * 1024 * 1024
@@ -67,16 +67,16 @@ private const val TCP_RECEIVE_WINDOW_LOG_INTERVAL_MS = 2_000L
 private const val TCP_HALF_CLOSED_IDLE_TIMEOUT_MS = 15_000L
 private const val TCP_PRESSURE_HALF_CLOSED_IDLE_TIMEOUT_MS = 5_000L
 private const val TCP_IDLE_TIMEOUT_MS = 30 * 60_000L
-private const val TCP_PRESSURE_IDLE_TIMEOUT_MS = 5 * 60_000L
-private const val TCP_PRESSURE_CONNECTIONS = 64
+private const val TCP_PRESSURE_IDLE_TIMEOUT_MS = 30_000L
+private const val TCP_PRESSURE_CONNECTIONS = 48
 private const val TCP_IDLE_SWEEP_INTERVAL_MS = 2_000L
 private const val SOCKS_BACKLOG = 256
-private const val MAX_ACTIVE_SOCKS_CONNECTIONS = 64
-private const val MAX_ACTIVE_SOCKS_CONNECTIONS_PER_TARGET = 64
+private const val MAX_ACTIVE_SOCKS_CONNECTIONS = 192
+private const val MAX_ACTIVE_SOCKS_CONNECTIONS_PER_TARGET = 192
 private const val SOCKS_CONNECT_QUEUE_TIMEOUT_MS = 45_000L
-private const val SOCKS_SLOT_QUEUE_TIMEOUT_MS = 45_000L
+private const val SOCKS_SLOT_QUEUE_TIMEOUT_MS = 5_000L
 private const val LOCAL_SOCKS_HANDSHAKE_TIMEOUT_MS = 15_000
-private const val LOCAL_SOCKS_HALF_CLOSE_DRAIN_MS = 500L
+private const val LOCAL_SOCKS_HALF_CLOSE_DRAIN_MS = 5_000L
 private const val SOCKS_PIPE_BUFFER_BYTES = 64 * 1024
 private const val PACKET_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024
 private const val LOCAL_SOCKS_SOCKET_BUFFER_BYTES = 2 * 1024 * 1024
@@ -84,7 +84,7 @@ private const val OPENVPN_TRANSPORT_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024
 private const val SLOW_VIRTUAL_TCP_CONNECT_MS = 500L
 private const val SLOW_VIRTUAL_TCP_ACK_MS = 2_000L
 
-private val UDP_PROTO_REGEX = Regex(
+private val OPENVPN_UDP_PROTO_REGEX = Regex(
     """(?im)^\s*(proto\s+udp[46]?|remote\s+\S+\s+\d+\s+udp[46]?)\b"""
 )
 
@@ -128,9 +128,8 @@ internal class OpenVpnUserspaceTunnel : OpenVpn() {
     suspend fun startUserspace(config: JSONObject, protect: (Int) -> Boolean): OpenVpnUnderlaySettings {
         val openVpnConfigJson = createOpenVpnConfig(config)
         val rawConfig = openVpnConfigJson.getJSONObject("openvpn_config_data").getString("config")
-        if (UDP_PROTO_REGEX.containsMatchIn(rawConfig)) {
-            throw BadConfigException("OXray currently supports only OpenVPN proto tcp")
-        }
+        val openVpnTransportProto = if (OPENVPN_UDP_PROTO_REGEX.containsMatchIn(rawConfig)) "udp" else "tcp"
+        Log.i(USERSACE_TAG, "Starting OpenVPN userspace underlay transport proto=$openVpnTransportProto")
 
         val connected = CompletableDeferred<Unit>()
         val configBuilder = OpenVpnConfig.Builder().apply {
@@ -163,8 +162,7 @@ internal class OpenVpnUserspaceTunnel : OpenVpn() {
             connected.await()
         }
 
-        val activeRouter = router
-            ?: throw VpnStartException("OpenVPN userspace packet router was not established")
+        router ?: throw VpnStartException("OpenVPN userspace packet router was not established")
         val server = OpenVpnSocksServer(
             routerProvider = { router?.takeUnless { it.isClosed } },
             isOpenVpnReady = { openVpnConnected },
@@ -364,26 +362,32 @@ private class UserspaceOpenVpnClient(
     private fun tuneTransportSocket(socket: Int): Boolean {
         return runCatching {
             ParcelFileDescriptor.fromFd(socket).use { pfd ->
-                Os.setsockoptInt(
-                    pfd.fileDescriptor,
-                    OsConstants.IPPROTO_TCP,
-                    OsConstants.TCP_NODELAY,
-                    1
-                )
-                Os.setsockoptInt(
-                    pfd.fileDescriptor,
-                    OsConstants.SOL_SOCKET,
-                    OsConstants.SO_RCVBUF,
-                    OPENVPN_TRANSPORT_SOCKET_BUFFER_BYTES
-                )
-                Os.setsockoptInt(
-                    pfd.fileDescriptor,
-                    OsConstants.SOL_SOCKET,
-                    OsConstants.SO_SNDBUF,
-                    OPENVPN_TRANSPORT_SOCKET_BUFFER_BYTES
-                )
+                runCatching {
+                    Os.setsockoptInt(
+                        pfd.fileDescriptor,
+                        OsConstants.IPPROTO_TCP,
+                        OsConstants.TCP_NODELAY,
+                        1
+                    )
+                }
+                val receiveBufferTuned = runCatching {
+                    Os.setsockoptInt(
+                        pfd.fileDescriptor,
+                        OsConstants.SOL_SOCKET,
+                        OsConstants.SO_RCVBUF,
+                        OPENVPN_TRANSPORT_SOCKET_BUFFER_BYTES
+                    )
+                }.isSuccess
+                val sendBufferTuned = runCatching {
+                    Os.setsockoptInt(
+                        pfd.fileDescriptor,
+                        OsConstants.SOL_SOCKET,
+                        OsConstants.SO_SNDBUF,
+                        OPENVPN_TRANSPORT_SOCKET_BUFFER_BYTES
+                    )
+                }.isSuccess
+                receiveBufferTuned || sendBufferTuned
             }
-            true
         }.onFailure { error ->
             Log.w(
                 USERSACE_TAG,
@@ -489,11 +493,14 @@ private class OpenVpnSocksServer(
                         }
                     }
                     if (downstream.isActive && !client.isClosed && !virtual.closed) {
-                        virtual.close()
+                        virtual.close("half-close drain expired")
                     }
                     upstream.cancel()
                     downstream.cancel()
                 }
+                traceUserspace(
+                    "SOCKS CONNECT ${target.host}:${target.port} virtual summary ${connection.statusForLog()}"
+                )
             } finally {
                 slot.release()
                 traceUserspace(
@@ -531,40 +538,51 @@ private class OpenVpnSocksServer(
 
     private fun acquireConnectionSlot(target: SocksTarget): ConnectionSlot? {
         val startedAt = System.currentTimeMillis()
+        val deadline = startedAt + SOCKS_SLOT_QUEUE_TIMEOUT_MS
         val targetSemaphore = targetConnections.computeIfAbsent(target) {
             Semaphore(MAX_ACTIVE_SOCKS_CONNECTIONS_PER_TARGET, true)
         }
-        val acquiredTotal = try {
-            activeConnections.tryAcquire(SOCKS_SLOT_QUEUE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
-        }
-        if (!acquiredTotal) {
-            return null
-        }
+        var loggedWait = false
+        while (System.currentTimeMillis() < deadline) {
+            var acquiredTarget = false
+            var acquiredTotal = false
+            try {
+                acquiredTarget = targetSemaphore.tryAcquire()
+                if (acquiredTarget) {
+                    acquiredTotal = activeConnections.tryAcquire()
+                }
+                if (acquiredTarget && acquiredTotal) {
+                    val waitedMs = System.currentTimeMillis() - startedAt
+                    if (waitedMs > 250) {
+                        traceUserspace(
+                            "SOCKS CONNECT ${target.host}:${target.port} waited ${waitedMs}ms for OpenVPN userspace slot " +
+                                connectionCountsForLog(target)
+                        )
+                    }
+                    return ConnectionSlot(activeConnections, targetSemaphore)
+                }
+            } finally {
+                if (acquiredTarget && !acquiredTotal) {
+                    targetSemaphore.release()
+                }
+            }
 
-        val remainingMs = (SOCKS_SLOT_QUEUE_TIMEOUT_MS - (System.currentTimeMillis() - startedAt))
-            .coerceAtLeast(0L)
-        val acquiredTarget = try {
-            targetSemaphore.tryAcquire(remainingMs, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
+            val waitedMs = System.currentTimeMillis() - startedAt
+            if (!loggedWait && waitedMs > 250) {
+                loggedWait = true
+                traceUserspace(
+                    "SOCKS CONNECT ${target.host}:${target.port} waiting for OpenVPN userspace slot " +
+                        connectionCountsForLog(target)
+                )
+            }
+            try {
+                Thread.sleep(25)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return null
+            }
         }
-        if (!acquiredTarget) {
-            activeConnections.release()
-            return null
-        }
-
-        val waitedMs = System.currentTimeMillis() - startedAt
-        if (waitedMs > 250) {
-            traceUserspace(
-                "SOCKS CONNECT ${target.host}:${target.port} waited ${waitedMs}ms for OpenVPN userspace slot " +
-                    connectionCountsForLog(target)
-            )
-        }
-        return ConnectionSlot(activeConnections, targetSemaphore)
+        return null
     }
 
     private fun activeConnectionCount(): Int =
@@ -669,7 +687,11 @@ private class OpenVpnSocksServer(
             }
         } catch (_: SocketTimeoutException) {
             Log.i(USERSACE_TAG, "SOCKS client idle timeout for ${target.host}:${target.port}")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            traceUserspace(
+                "SOCKS client->virtual pipe closed for ${target.host}:${target.port}: " +
+                    "${e::class.java.simpleName}: ${e.message ?: ""}"
+            )
             // The SOCKS side may close first; this is a normal TCP teardown path.
         } finally {
             virtual.shutdownOutput()
@@ -693,10 +715,14 @@ private class OpenVpnSocksServer(
                     virtual.onInboundPayloadDelivered(read)
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            traceUserspace(
+                "SOCKS virtual->client pipe closed for ${target.host}:${target.port}: " +
+                    "${e::class.java.simpleName}: ${e.message ?: ""}"
+            )
             // The client may close the SOCKS connection while the virtual TCP pipe is draining.
         } finally {
-            virtual.close()
+            virtual.close("local SOCKS downstream closed")
         }
     }
 }
@@ -766,7 +792,7 @@ private class UserspaceTcpRouter(
             return connection
         } catch (e: Exception) {
             connections.remove(localPort)
-            connection.close()
+            connection.close("connect failed: ${e.message ?: e::class.java.simpleName}")
             throw e
         }
     }
@@ -830,7 +856,7 @@ private class UserspaceTcpRouter(
         closed = true
         packetReaderThread?.interrupt()
         scope.cancel()
-        connections.values.forEach { it.close() }
+        connections.values.forEach { it.close("router close") }
         connections.clear()
         runCatching { Os.close(packetFd) }
     }
@@ -870,7 +896,7 @@ private class UserspaceTcpRouter(
                     USERSACE_TAG,
                     "Closing virtual TCP ${packet.dstPort} after packet handling error: ${e.message ?: e}"
                 )
-                connection.close()
+                connection.close("packet handling error: ${e.message ?: e::class.java.simpleName}")
             }
         }
         if (!closed) {
@@ -903,14 +929,14 @@ private class UserspaceTcpRouter(
                 val closeReason = connection.idleCloseReason(now, underPressure)
                 if (closeReason != null) {
                     Log.i(USERSACE_TAG, "Closing $closeReason virtual TCP ${connection.describe()}")
-                    connection.close()
+                    connection.close(closeReason)
                     return@forEach
                 }
 
                 val gapCloseReason = connection.gapCloseReason(now, underPressure)
                 if (gapCloseReason != null) {
                     Log.w(USERSACE_TAG, "Closing $gapCloseReason virtual TCP ${connection.describe()}")
-                    connection.close()
+                    connection.close(gapCloseReason)
                 }
             }
         }
@@ -928,7 +954,7 @@ private class UserspaceTcpRouter(
                         USERSACE_TAG,
                         "Closing virtual TCP ${connection.describe()} after gap ACK error: ${e.message ?: e}"
                     )
-                    connection.close()
+                    connection.close("gap ACK error: ${e.message ?: e::class.java.simpleName}")
                 }
             }
         }
@@ -969,12 +995,22 @@ private class VirtualTcpConnection(
     @Volatile
     private var lastInboundPayloadAt = lastActivityAt
     @Volatile
+    private var closeReason = "open"
+    @Volatile
+    private var bytesClientToRemote = 0L
+    @Volatile
+    private var bytesRemoteToClient = 0L
+    @Volatile
     var closed: Boolean = false
         private set
 
     val input: InputStream = receivedInput
 
     fun describe(): String = "$localPort -> ${intToIpv4(remoteAddress)}:$remotePort"
+
+    fun statusForLog(): String =
+        "${describe()} reason=$closeReason up=$bytesClientToRemote down=$bytesRemoteToClient " +
+            "established=$established outputShutdown=$outputShutdown"
 
     fun idleCloseReason(now: Long, underPressure: Boolean): String? {
         if (closed) return null
@@ -1094,15 +1130,20 @@ private class VirtualTcpConnection(
                 }
 
                 if (!acknowledged) {
+                    if (closed || outputShutdown) {
+                        break
+                    }
                     if (!closed) {
                         Log.w(
                             USERSACE_TAG,
                             "Timed out waiting for virtual TCP ACK $localPort -> ${intToIpv4(remoteAddress)}:$remotePort"
                         )
                     }
+                    markCloseReason("ACK timeout")
                     throw EOFException("Timed out waiting for TCP ACK from ${intToIpv4(remoteAddress)}:$remotePort")
                 }
                 written += sent
+                bytesClientToRemote += sent.toLong()
             }
         }
     }
@@ -1145,7 +1186,7 @@ private class VirtualTcpConnection(
             }
 
             if ((packet.flags and TCP_RST) != 0) {
-                closeLocked()
+                closeLocked("remote RST seq=${packet.seq} ack=${packet.ack}")
                 lock.notifyAll()
                 return
             }
@@ -1180,7 +1221,7 @@ private class VirtualTcpConnection(
                 }
                 remoteSeq = addSeq(remoteSeq, 1)
                 sendAckLocked()
-                closeLocked()
+                closeLocked("remote FIN seq=${packet.seq}")
                 lock.notifyAll()
             }
         }
@@ -1221,6 +1262,10 @@ private class VirtualTcpConnection(
     }
 
     override fun close() {
+        close("local close")
+    }
+
+    fun close(reason: String) {
         var shouldSendFin = false
         synchronized(lock) {
             if (!closed && !outputShutdown) {
@@ -1228,7 +1273,7 @@ private class VirtualTcpConnection(
                 outputShutdown = true
                 outputShutdownAt = System.currentTimeMillis()
             }
-            closeLocked()
+            closeLocked(reason)
             lock.notifyAll()
         }
         if (shouldSendFin) {
@@ -1248,6 +1293,12 @@ private class VirtualTcpConnection(
                     )
                 }
             }
+        }
+    }
+
+    private fun markCloseReason(reason: String) {
+        if (closeReason == "open") {
+            closeReason = reason
         }
     }
 
@@ -1357,6 +1408,7 @@ private class VirtualTcpConnection(
             return false
         }
         receiveBufferedBytes += length
+        bytesRemoteToClient += length.toLong()
         lastInboundPayloadAt = System.currentTimeMillis()
         remoteSeq = addSeq(remoteSeq, length)
         return true
@@ -1420,7 +1472,7 @@ private class VirtualTcpConnection(
             }
         } catch (e: Exception) {
             synchronized(lock) {
-                closeLocked()
+                closeLocked("send new data failed: ${e.message ?: e::class.java.simpleName}")
                 lock.notifyAll()
             }
             throw e
@@ -1453,7 +1505,7 @@ private class VirtualTcpConnection(
             )
         } catch (e: Exception) {
             synchronized(lock) {
-                closeLocked()
+                closeLocked("send retransmit failed: ${e.message ?: e::class.java.simpleName}")
                 lock.notifyAll()
             }
             throw e
@@ -1570,8 +1622,9 @@ private class VirtualTcpConnection(
         }
     }
 
-    private fun closeLocked() {
+    private fun closeLocked(reason: String) {
         if (closed) return
+        markCloseReason(reason)
         closed = true
         outputShutdown = true
         router.remove(localPort)

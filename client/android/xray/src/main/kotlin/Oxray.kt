@@ -106,10 +106,7 @@ class Oxray : Protocol() {
     private var openVpnUnderlayMode = false
 
     private val routingStrategies = listOf(
-        RoutingStrategy("sendThrough+protect", useSendThrough = true, protectDialerSockets = true),
-        RoutingStrategy("sendThrough+no-protect", useSendThrough = true, protectDialerSockets = false),
-        RoutingStrategy("plain+protect", useSendThrough = false, protectDialerSockets = true),
-        RoutingStrategy("plain+no-protect", useSendThrough = false, protectDialerSockets = false)
+        RoutingStrategy("openvpn-userspace-underlay", useSendThrough = false, protectDialerSockets = false)
     )
 
     override val statistics: Statistics
@@ -782,7 +779,7 @@ class Oxray : Protocol() {
         cleanedOutbounds.put(underlayOutbound)
         xrayJsonConfig.put("outbounds", cleanedOutbounds)
 
-        val dnsServers = buildOpenVpnUnderlayDnsServers(config, xrayConfig)
+        val dnsServers = buildOpenVpnUnderlayDnsServers(config)
         applyDnsServers(xrayConfig, dnsServers)
 
         extractXrayRemoteHost(xrayConfig)?.takeIf { it.isNotBlank() }?.let { remoteHost ->
@@ -798,34 +795,22 @@ class Oxray : Protocol() {
         return xrayConfig
     }
 
-    private fun buildOpenVpnUnderlayDnsServers(sourceConfig: JSONObject, xrayConfig: JSONObject): List<String> {
-        val remoteHosts = linkedSetOf<String>()
-        sourceConfig.optString(HOST_NAME)
-            .takeIf { it.isNotBlank() }
-            ?.let(remoteHosts::add)
-        extractXrayRemoteHost(sourceConfig)
-            ?.takeIf { it.isNotBlank() }
-            ?.let(remoteHosts::add)
-        extractXrayRemoteHost(xrayConfig)
-            ?.takeIf { it.isNotBlank() }
-            ?.let(remoteHosts::add)
-
-        val remoteIps = remoteHosts.mapNotNullTo(linkedSetOf()) { resolveIp(it) }
+    private fun buildOpenVpnUnderlayDnsServers(sourceConfig: JSONObject): List<String> {
+        val configuredCandidates = linkedSetOf<String>()
+        appendDnsCandidates(sourceConfig, configuredCandidates)
+        if (configuredCandidates.isNotEmpty()) {
+            return configuredCandidates.toList()
+        }
 
         val candidates = linkedSetOf<String>()
-        appendDnsCandidates(sourceConfig, candidates)
         openVpn.tunnelDnsServers.forEach { dns ->
             normalizeIpv4DnsCandidate(dns)?.let(candidates::add)
         }
-        OXRAY_UNDERLAY_FALLBACK_DNS.forEach { dns ->
-            normalizeIpv4DnsCandidate(dns)?.let(candidates::add)
+        if (candidates.isNotEmpty()) {
+            return candidates.toList()
         }
 
-        val filtered = candidates.filterNot { dns ->
-            remoteHosts.any { host -> dns.equals(host, ignoreCase = true) } || dns in remoteIps
-        }
-
-        return filtered.ifEmpty { OXRAY_UNDERLAY_FALLBACK_DNS }
+        return OXRAY_UNDERLAY_FALLBACK_DNS
     }
 
     private fun appendDnsCandidates(config: JSONObject, candidates: MutableSet<String>) {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.VpnService.Builder
 import java.io.File
 import java.io.IOException
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -33,6 +34,12 @@ private const val SOCKS_WAIT_TIMEOUT_MS = 4_000L
 private const val SOCKS_WAIT_RETRY_DELAY_MS = 50L
 private const val SOCKS_WAIT_CONNECT_TIMEOUT_MS = 200
 private const val APP_SPLIT_TUNNEL_INCLUDE = 1
+private const val OXRAY_MAIN_OUTBOUND_TAG = "amnezia-main-out"
+private const val OXRAY_DNS_OUTBOUND_TAG = "amnezia-dns-out"
+private const val OXRAY_DNS_QUERY_TAG = "amnezia-dns-query"
+private const val OXRAY_UDP443_BLOCK_OUTBOUND_TAG = "amnezia-udp443-block"
+private const val OXRAY_IPV6_BLOCK_OUTBOUND_TAG = "amnezia-ipv6-block"
+private const val OXRAY_DNS_PRIVACY_BLOCK_OUTBOUND_TAG = "amnezia-dns-privacy-block"
 
 private fun findSocksInboundIndex(inbounds: JSONArray): Int {
     for (i in 0 until inbounds.length()) {
@@ -92,9 +99,27 @@ private fun extractRemoteHost(xrayConfig: JSONObject): String? =
         ?.optString("address")
         ?.takeIf { it.isNotBlank() }
 
+private fun resolveOutboundHost(config: JSONObject, hostName: String): InetAddress {
+    if (!config.optBoolean("oxrayOpenVpnUnderlay", false)) {
+        return parseInetAddress(hostName)
+    }
+
+    val addresses = runCatching { InetAddress.getAllByName(hostName).toList() }
+        .getOrElse { error ->
+            throw BadConfigException(
+                "Failed to resolve Xray server for OXray OpenVPN underlay: ${error.message ?: error}"
+            )
+        }
+    return addresses.firstOrNull { it is Inet4Address }
+        ?: throw BadConfigException(
+            "OXray OpenVPN userspace underlay requires an IPv4 address for Xray server: $hostName"
+        )
+}
+
 private fun configureCoreDns(xrayJsonConfig: JSONObject, config: JSONObject) {
     val remoteHost = extractRemoteHost(xrayJsonConfig)
     val remoteIp = remoteHost?.let { runCatching { parseInetAddress(it).ip }.getOrNull() }
+    val oxrayOpenVpnUnderlay = config.optBoolean("oxrayOpenVpnUnderlay", false)
 
     val preferredDns = linkedSetOf<String>()
     config.optJSONArray("dnsServers")?.let { dnsArray ->
@@ -111,29 +136,192 @@ private fun configureCoreDns(xrayJsonConfig: JSONObject, config: JSONObject) {
         .takeIf { it.isNotBlank() }
         ?.let(preferredDns::add)
 
-    val filteredDns = preferredDns.filterNot { dns ->
-        val dnsIp = runCatching { parseInetAddress(dns).ip }.getOrNull()
-        (!remoteHost.isNullOrBlank() && dns.equals(remoteHost, ignoreCase = true)) ||
-            (!dnsIp.isNullOrBlank() && !remoteIp.isNullOrBlank() && dnsIp == remoteIp)
+    val filteredDns = if (oxrayOpenVpnUnderlay) {
+        preferredDns.toList()
+    } else {
+        preferredDns.filterNot { dns ->
+            val dnsIp = runCatching { parseInetAddress(dns).ip }.getOrNull()
+            (!remoteHost.isNullOrBlank() && dns.equals(remoteHost, ignoreCase = true)) ||
+                (!dnsIp.isNullOrBlank() && !remoteIp.isNullOrBlank() && dnsIp == remoteIp)
+        }
     }
     if (filteredDns.isEmpty()) {
         return
     }
 
-    val tunnelFirstDns = filteredDns.sortedWith(
-        compareBy<String> { !it.startsWith("10.") && !it.startsWith("192.168.") && !it.startsWith("172.") }
-            .thenBy { it }
-    )
+    val tunnelFirstDns = if (oxrayOpenVpnUnderlay) {
+        filteredDns
+    } else {
+        filteredDns.sortedWith(
+            compareBy<String> { !it.startsWith("10.") && !it.startsWith("192.168.") && !it.startsWith("172.") }
+                .thenBy { it }
+        )
+    }
 
     val dnsObject = xrayJsonConfig.optJSONObject("dns") ?: JSONObject()
     val servers = JSONArray()
     tunnelFirstDns.forEach { dns ->
-        servers.put("tcp://$dns")
+        servers.put(if (oxrayOpenVpnUnderlay) dns else "tcp://$dns")
     }
     dnsObject.put("servers", servers)
-    dnsObject.put("queryStrategy", "UseIPv4")
+    dnsObject.put("queryStrategy", if (oxrayOpenVpnUnderlay) "UseIPv4" else "UseIP")
+    if (oxrayOpenVpnUnderlay) {
+        dnsObject.put("tag", OXRAY_DNS_QUERY_TAG)
+        configureOxrayDnsHijack(xrayJsonConfig, tunnelFirstDns)
+    }
     xrayJsonConfig.put("dns", dnsObject)
     Log.i(TAG, "Configured Xray core DNS servers: $tunnelFirstDns")
+}
+
+private fun configureOxrayDnsHijack(xrayJsonConfig: JSONObject, dnsServers: List<String>) {
+    val outbounds = xrayJsonConfig.optJSONArray("outbounds")
+        ?: JSONArray().also { xrayJsonConfig.put("outbounds", it) }
+    val mainOutboundTag = ensureMainOutboundTag(outbounds)
+    val dnsServer = dnsServers.firstOrNull() ?: return
+
+    val dnsOutbound = JSONObject()
+        .put("tag", OXRAY_DNS_OUTBOUND_TAG)
+        .put("protocol", "dns")
+        .put(
+            "settings",
+            JSONObject()
+                .put("network", "udp")
+                .put("address", dnsServer)
+                .put("port", 53)
+                .put(
+                    "rules",
+                    JSONArray()
+                        .put(JSONObject().put("action", "hijack").put("qtype", 1))
+                        .put(JSONObject().put("action", "reject").put("qtype", 28))
+                )
+        )
+    putOrReplaceOutbound(outbounds, dnsOutbound)
+    putOrReplaceOutbound(
+        outbounds,
+        JSONObject()
+            .put("tag", OXRAY_UDP443_BLOCK_OUTBOUND_TAG)
+            .put("protocol", "blackhole")
+            .put("settings", JSONObject())
+    )
+    putOrReplaceOutbound(
+        outbounds,
+        JSONObject()
+            .put("tag", OXRAY_IPV6_BLOCK_OUTBOUND_TAG)
+            .put("protocol", "blackhole")
+            .put("settings", JSONObject())
+    )
+    putOrReplaceOutbound(
+        outbounds,
+        JSONObject()
+            .put("tag", OXRAY_DNS_PRIVACY_BLOCK_OUTBOUND_TAG)
+            .put("protocol", "blackhole")
+            .put("settings", JSONObject())
+    )
+
+    val routing = xrayJsonConfig.optJSONObject("routing")
+        ?: JSONObject().also { xrayJsonConfig.put("routing", it) }
+    val existingRules = routing.optJSONArray("rules") ?: JSONArray()
+    val rules = JSONArray()
+        .put(
+            JSONObject()
+                .put("type", "field")
+                .put("inboundTag", JSONArray().put(OXRAY_DNS_QUERY_TAG))
+                .put("outboundTag", mainOutboundTag)
+        )
+        .put(
+            JSONObject()
+                .put("type", "field")
+                .put("network", "udp")
+                .put("port", 443)
+                .put("outboundTag", OXRAY_UDP443_BLOCK_OUTBOUND_TAG)
+        )
+        .put(
+            JSONObject()
+                .put("type", "field")
+                .put("network", "tcp,udp")
+                .put("ip", JSONArray().put("::/0"))
+                .put("outboundTag", OXRAY_IPV6_BLOCK_OUTBOUND_TAG)
+        )
+        .put(
+            JSONObject()
+                .put("type", "field")
+                .put("network", "tcp,udp")
+                .put("port", 853)
+                .put("outboundTag", OXRAY_DNS_PRIVACY_BLOCK_OUTBOUND_TAG)
+        )
+        .put(
+            JSONObject()
+                .put("type", "field")
+                .put("network", "tcp")
+                .put("port", 443)
+                .put(
+                    "ip",
+                    JSONArray()
+                        .put("1.0.0.1")
+                        .put("1.1.1.1")
+                        .put("8.8.4.4")
+                        .put("8.8.8.8")
+                        .put("9.9.9.9")
+                        .put("149.112.112.112")
+                        .put("208.67.220.220")
+                        .put("208.67.222.222")
+                )
+                .put("outboundTag", OXRAY_DNS_PRIVACY_BLOCK_OUTBOUND_TAG)
+        )
+        .put(
+            JSONObject()
+                .put("type", "field")
+                .put("network", "tcp,udp")
+                .put("port", 53)
+                .put("outboundTag", OXRAY_DNS_OUTBOUND_TAG)
+        )
+
+    for (index in 0 until existingRules.length()) {
+        val rule = existingRules.optJSONObject(index) ?: continue
+        val outboundTag = rule.optString("outboundTag")
+        val inboundTags = rule.optJSONArray("inboundTag")
+        val isOurDnsRule = outboundTag == OXRAY_DNS_OUTBOUND_TAG ||
+            outboundTag == OXRAY_UDP443_BLOCK_OUTBOUND_TAG ||
+            outboundTag == OXRAY_IPV6_BLOCK_OUTBOUND_TAG ||
+            outboundTag == OXRAY_DNS_PRIVACY_BLOCK_OUTBOUND_TAG ||
+            (inboundTags != null && (0 until inboundTags.length()).any {
+                inboundTags.optString(it) == OXRAY_DNS_QUERY_TAG
+            })
+        if (!isOurDnsRule) {
+            rules.put(rule)
+        }
+    }
+    routing.put("rules", rules)
+    Log.i(
+        TAG,
+        "Configured OXray DNS hijack via $OXRAY_DNS_OUTBOUND_TAG: " +
+            "A=hijack, AAAA=reject, UDP/443=block, DoT/DoH=block, IPv6=block, " +
+            "upstream=$dnsServer, dnsTraffic=$mainOutboundTag"
+    )
+}
+
+private fun ensureMainOutboundTag(outbounds: JSONArray): String {
+    if (outbounds.length() == 0) {
+        throw BadConfigException("Xray outbounds are empty")
+    }
+    val mainOutbound = outbounds.getJSONObject(0)
+    val existingTag = mainOutbound.optString("tag").takeIf { it.isNotBlank() }
+    if (existingTag != null) {
+        return existingTag
+    }
+    mainOutbound.put("tag", OXRAY_MAIN_OUTBOUND_TAG)
+    return OXRAY_MAIN_OUTBOUND_TAG
+}
+
+private fun putOrReplaceOutbound(outbounds: JSONArray, outbound: JSONObject) {
+    val tag = outbound.optString("tag")
+    for (index in 0 until outbounds.length()) {
+        if (outbounds.optJSONObject(index)?.optString("tag") == tag) {
+            outbounds.put(index, outbound)
+            return
+        }
+    }
+    outbounds.put(outbound)
 }
 
 open class Xray : Protocol() {
@@ -176,12 +364,12 @@ open class Xray : Protocol() {
         val xrayConfig = parseConfig(config, xrayJsonConfig)
 
         (xrayJsonConfig.optJSONObject("log") ?: JSONObject().also { xrayJsonConfig.put("log", it) })
-            .put("loglevel", "warning")
+            .put("loglevel", if (config.optBoolean("oxrayOpenVpnUnderlay", false)) "info" else "warning")
             .put("access", "none") // disable access log
 
         var xrayJsonConfigString = xrayJsonConfig.toString()
         config.getString("hostName").let { hostName ->
-            val ipAddress = parseInetAddress(hostName).ip
+            val ipAddress = resolveOutboundHost(config, hostName).ip
             if (hostName != ipAddress) {
                 xrayJsonConfigString = xrayJsonConfigString.replace(hostName, ipAddress)
             }
@@ -194,10 +382,17 @@ open class Xray : Protocol() {
 
     private fun parseConfig(config: JSONObject, xrayJsonConfig: JSONObject): XrayConfig {
         val dnsServers = resolveDnsServers(config)
+        val oxrayOpenVpnUnderlay = config.optBoolean("oxrayOpenVpnUnderlay", false)
         Log.i(TAG, "Xray interface DNS order: ${dnsServers.ifEmpty { listOf("<none>") }}")
 
         return XrayConfig.build {
             addAddress(XrayConfig.DEFAULT_IPV4_ADDRESS)
+            if (oxrayOpenVpnUnderlay) {
+                Log.i(TAG, "OXray OpenVPN underlay uses IPv4-only Android VPN interface")
+            } else {
+                addAddress(XrayConfig.DEFAULT_IPV6_ADDRESS)
+                setAllowAllAF(true)
+            }
 
             for (dnsServer in dnsServers) {
                 val parsedDnsServer = parseInetAddress(dnsServer)
@@ -208,8 +403,8 @@ open class Xray : Protocol() {
             }
 
             addRoute(InetNetwork("0.0.0.0", 0))
-            addRoute(InetNetwork("2000::0", 3))
-            if (!config.optBoolean("oxrayOpenVpnUnderlay", false)) {
+            if (!oxrayOpenVpnUnderlay) {
+                addRoute(InetNetwork("2000::0", 3))
                 config.getString("hostName").let { hostName ->
                     excludeRoute(InetNetwork(parseInetAddress(hostName)))
                 }
@@ -243,7 +438,7 @@ open class Xray : Protocol() {
                 setSocksPass(account.optString("pass"))
             }
 
-            if (config.optBoolean("oxrayOpenVpnUnderlay", false)) {
+            if (oxrayOpenVpnUnderlay) {
                 configAppSplitTunneling(config)
                 excludeSelfFromOxrayVpn(config)
                 Log.i(TAG, "OXray OpenVPN underlay uses full-tunnel routing with app split tunneling")
