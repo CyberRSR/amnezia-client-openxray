@@ -120,6 +120,7 @@ open class AmneziaVpnService : VpnService() {
     private var unexpectedDisconnectRecoveryJob: Job? = null
     private var unexpectedDisconnectRecoveryAttempts = 0
     private var disconnectRequested = false
+    private var protocolErrorReceived = false
     private var sleepGuardWakeLock: PowerManager.WakeLock? = null
     private var sleepGuardWifiLock: WifiManager.WifiLock? = null
 
@@ -431,7 +432,7 @@ open class AmneziaVpnService : VpnService() {
                         stopTrafficStatsUpdateJob()
                         // stopSendingStatistics()
                         updateSleepGuards()
-                        if (disconnectRequested) {
+                        if (disconnectRequested || protocolErrorReceived) {
                             cancelUnexpectedDisconnectRecovery()
                             unexpectedDisconnectRecoveryAttempts = 0
                             if (!isServiceBound) stopService()
@@ -545,6 +546,7 @@ open class AmneziaVpnService : VpnService() {
     @MainThread
     private fun connect(vpnConfig: String? = null) {
         disconnectRequested = false
+        protocolErrorReceived = false
         cancelPendingStopService()
         cancelUnexpectedDisconnectRecovery()
         if (vpnConfig == null) {
@@ -578,6 +580,7 @@ open class AmneziaVpnService : VpnService() {
         }
 
         disconnectRequested = false
+        protocolErrorReceived = false
         protocolState.value = CONNECTING
         currentStatus = currentStatusFor(CONNECTING)
 
@@ -647,6 +650,7 @@ open class AmneziaVpnService : VpnService() {
      */
     private fun onError(msg: String) {
         Log.e(TAG, msg)
+        protocolErrorReceived = true
         mainScope.launch {
             clientMessengers.send {
                 ServiceEvent.ERROR.packToMessage {
