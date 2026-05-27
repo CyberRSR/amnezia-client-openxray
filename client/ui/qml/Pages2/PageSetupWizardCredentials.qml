@@ -19,7 +19,7 @@ PageType {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.topMargin: 20 + SettingsController.safeAreaTopMargin
+        anchors.topMargin: 20 + PageController.safeAreaTopMargin
 
         onFocusChanged: {
             if (this.activeFocus) {
@@ -94,7 +94,7 @@ PageType {
                 visible: title === qsTr("Password or SSH private key")
                 backGroundColor: AmneziaStyle.color.translucentWhite
                 iconPath: "qrc:/images/controls/alert-circle.svg"
-                textString: qsTr("SSH key requirements: supported ED25519 or RSA in PEM. Paste the private key including BEGIN/END lines. If your key doesn’t work, generate a compatible one.")
+                textString: qsTr("SSH key requirements: supported key types are ED25519 and RSA in PEM format. Paste the private key, including the BEGIN/END lines. If your key doesn’t work, generate a compatible one")
             }
         }
 
@@ -116,12 +116,12 @@ PageType {
                         return
                     }
 
-                    InstallController.setShouldCreateServer(true)
                     var _hostname = listView.itemAtIndex(vars.hostnameIndex).children[0].textField.text
                     var _username = listView.itemAtIndex(vars.usernameIndex).children[0].textField.text
                     var _secretData = listView.itemAtIndex(vars.secretDataIndex).children[0].textField.text
 
                     InstallController.setProcessedServerCredentials(_hostname, _username, _secretData)
+                    ServersUiController.setProcessedServerIndex(-1)
 
                     PageController.showBusyIndicator(true)
                     var isConnectionOpened = InstallController.checkSshConnection()
@@ -159,7 +159,7 @@ PageType {
                 leftImageSource: "qrc:/images/controls/help-circle.svg"
 
                 onClicked: {
-                    Qt.openUrlExternally(LanguageModel.getCurrentSiteUrl("starter-guide"))
+                    Qt.openUrlExternally(LanguageUiController.getCurrentSiteUrl("starter-guide"))
                 }
 
                 Keys.onEnterPressed: this.clicked()

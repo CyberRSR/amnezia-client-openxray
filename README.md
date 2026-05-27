@@ -1,189 +1,185 @@
-# Amnezia Client OXray Branch
+# Amnezia VPN
 
-This branch contains an Amnezia Client fork with `OXray` support.
+### _The best client for self-hosted VPN_
 
-## What OXray Is
 
-In this project, `OXray` is a composite Amnezia profile that combines Xray and OpenVPN in one Android VPN session.
+[![Build Status](https://github.com/amnezia-vpn/amnezia-client/actions/workflows/deploy.yml/badge.svg?branch=dev)](https://github.com/amnezia-vpn/amnezia-client/actions/workflows/deploy.yml?query=branch:dev)
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/amnezia-vpn/amnezia-client)
 
-The current Android implementation uses this traffic chain:
+### [English]([https://github.com/amnezia-vpn/amnezia-client/blob/dev/README_RU.md](https://github.com/amnezia-vpn/amnezia-client/tree/dev?tab=readme-ov-file#)) | [Русский](https://github.com/amnezia-vpn/amnezia-client/blob/dev/README_RU.md)
 
-`apps -> Android VpnService TUN -> tun2socks -> Xray -> local OpenVPN userspace SOCKS underlay -> OpenVPN server -> Xray server -> internet resource`
 
-Only one Android `VpnService` is created by the app. OpenVPN does not create a second Android VPN interface in OXray mode. Instead, OpenVPN runs as a userspace underlay transport for Xray outbound connections.
+[Amnezia](https://amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-en) is an open-source VPN client, with a key feature that enables you to deploy your own VPN server on your server.
 
-This mode is useful when you need to:
+[![Image](https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/uipic4.png)](https://amnezia.org)
 
-- keep using an existing `.ovpn` client profile
-- send application traffic through Xray first
-- carry Xray outbound connections through OpenVPN
-- keep the `OpenVPN + Xray` pair as one profile inside Amnezia Client
-- avoid two competing Android VPN services
+### [Website](https://amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-en) | [Alt website link](https://storage.googleapis.com/amnezia/amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-en-mirror) | [Documentation](https://docs.amnezia.org) | [Troubleshooting](https://docs.amnezia.org/troubleshooting)
 
-## Current Limitations
+> [!TIP]
+> If the [Amnezia website](https://amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-en) is blocked in your region, you can use an [Alternative website link](https://storage.googleapis.com/amnezia/amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-en-mirror).
 
-- The first stable Android implementation supports TCP OpenVPN profiles only.
-- UDP OpenVPN profiles are rejected with a clear error.
-- The local SOCKS endpoint is internal to the app and is used only between Xray and the OpenVPN userspace backend.
-- The local SOCKS endpoint is not exposed to the provider or to remote networks.
+<a href="https://amnezia.org/en/downloads?utm_source=github&utm_campaign=amnezia_button-readme-en"><img src="https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/download-website.svg" width="150" style="max-width: 100%; margin-right: 10px"></a>
+<a href="https://storage.googleapis.com/amnezia/amnezia.org?m-path=/en/downloads&utm_source=github&utm_campaign=amnezia_button-readme-en-mirrow"><img src="https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/download-alt.svg" width="150" style="max-width: 100%;"></a>
 
-## What This Branch Adds
+[All releases](https://github.com/amnezia-vpn/amnezia-client/releases)
 
-- a new `OXray` protocol type
-- import from two files: `OpenVPN (.ovpn)` and `Xray (.json/.txt/.conf)`
-- native OXray import and export format
-- a dedicated OXray settings page
-- native OXray JSON and QR export
-- Android integration for the single-VPN Xray-over-OpenVPN-underlay mode
-- a userspace OpenVPN TCP underlay backend for Android OXray connections
+<br/>
 
-## How To Load An OXray Configuration
+<a href="https://www.testiny.io"><img src="https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/testiny.png" height="28px"></a>
 
-Two main scenarios are supported.
+## Features
 
-### 1. Import From OpenVPN And Xray Files
+- Very easy to use - enter your IP address, SSH login, password and Amnezia will automatically install VPN docker containers to your server and connect to the VPN.
+- Classic VPN-protocols: OpenVPN, WireGuard and IKEv2 protocols.
+- Protocols with traffic Masking (Obfuscation): OpenVPN over [Cloak](https://github.com/cbeuw/Cloak) plugin, Shadowsocks (OpenVPN over Shadowsocks), [AmneziaWG](https://docs.amnezia.org/documentation/amnezia-wg/) and XRay.
+- Split tunneling support - add any sites to the client to enable VPN only for them or add Apps (only for Android and Desktop).
+- Windows, MacOS, Linux, Android, iOS releases.
+- Support for AmneziaWG protocol configuration on [Keenetic beta firmware](https://docs.keenetic.com/ua/air/kn-1611/en/6319-latest-development-release.html#UUID-186c4108-5afd-c10b-f38a-cdff6c17fab3_section-idm33192196168192-improved).
 
-Use this option if you already have:
+## Links
 
-- an `OpenVPN` client config in `.ovpn` format
-- an `Xray` client config in `.json`, `.txt`, or `.conf` format
+- [https://amnezia.org](https://amnezia.org) - Project website | [Alternative link (mirror)](https://storage.googleapis.com/kldscp/amnezia.org)
+- [https://docs.amnezia.org](https://docs.amnezia.org) - Documentation
+- [https://www.reddit.com/r/AmneziaVPN](https://www.reddit.com/r/AmneziaVPN) - Reddit  
+- [https://t.me/amnezia_vpn_en](https://t.me/amnezia_vpn_en) - Telegram support channel (English) 
+- [https://t.me/amnezia_vpn_ir](https://t.me/amnezia_vpn_ir) - Telegram support channel (Farsi) 
+- [https://t.me/amnezia_vpn_mm](https://t.me/amnezia_vpn_mm) - Telegram support channel (Myanmar)  
+- [https://t.me/amnezia_vpn](https://t.me/amnezia_vpn) - Telegram support channel (Russian)
+- [https://vpnpay.io/en/amnezia-premium/](https://vpnpay.io/en/amnezia-premium/) - Amnezia Premium
 
-Steps in the app:
+## Tech
 
-1. Open the add-connection screen.
-2. Select `OXray (OpenVPN + XRay)`.
-3. Choose the OpenVPN file.
-4. Choose the Xray file.
-5. Review the generated profile and save it.
+AmneziaVPN uses several open-source projects to work:
 
-The client combines both files into one Amnezia profile with the `amnezia-oxray` container.
+- [OpenSSL](https://www.openssl.org/)
+- [OpenVPN](https://openvpn.net/)
+- [Qt](https://www.qt.io/)
+- [LibSsh](https://libssh.org)
+- [WireGuard](https://www.wireguard.com/)
+- [Xray-core](https://xtls.github.io/en/)
+- [Conan](https://conan.io/)
+- and more...
 
-### 2. Import From Native OXray JSON
+## Help us with translations
 
-Use this option when the profile was previously exported from this branch.
+Download the most actual translation files.
 
-Native format marker:
+Go to ["Actions" tab](https://github.com/amnezia-vpn/amnezia-client/actions?query=is%3Asuccess+branch%3Adev), click on the first line.
+Then scroll down to the "Artifacts" section and download "AmneziaVPN_translations".
 
-```json
-{
-  "format": "amnezia-oxray-native",
-  "version": 1
-}
-```
+Unzip this file.
+Each *.ts file contains strings for one corresponding language.
 
-Steps in the app:
+Translate or correct some strings in one or multiple *.ts files and commit them back to this repository into the ``client/translations`` folder.
+You can do it via a web-interface or any other method you're familiar with.
 
-1. Open `File with connection settings`.
-2. Select the exported native `.json` file.
-3. Review the profile and import it.
+## Checking out the source code
 
-The same profile can also be shared through QR export.
-
-## Native OXray Format
-
-The native export is a JSON document with the main fields below:
-
-```json
-{
-  "format": "amnezia-oxray-native",
-  "version": 1,
-  "description": "My OXray profile",
-  "openvpnConfig": "<full .ovpn text>",
-  "xrayConfig": {
-    "outbounds": []
-  },
-  "useCustomDns": true,
-  "dns1": "1.1.1.1",
-  "dns2": "8.8.8.8"
-}
-```
-
-Field meaning:
-
-- `openvpnConfig`: original OpenVPN client config text
-- `xrayConfig`: full Xray client JSON config
-- `description`: profile name in the app
-- `useCustomDns`, `dns1`, `dns2`: optional DNS settings for the profile
-
-## OXray Settings
-
-The settings page is split into `OpenVPN`, `XRay`, and `DNS` sections.
-
-### OpenVPN
-
-- `VPN address subnet`: internal OpenVPN layer subnet
-- `Network protocol`: selects the OpenVPN transport protocol; Android OXray userspace mode currently supports `tcp`
-- `OpenVPN port`: rewrites the `remote ... <port>` directive in the client config
-- `Auto-negotiate encryption`: controls OpenVPN encryption negotiation and `ncp-disable` behavior
-- `Hash`: sets the `auth` value
-- `Cipher`: sets the `cipher` value
-- `TLS auth`: enables or removes `tls-auth` in the resulting client config
-- `Block DNS requests outside of VPN`: enables or disables `block-outside-dns`
-- `Additional client configuration commands`: adds a managed custom block to the resulting OpenVPN client config
-- `Additional server configuration commands`: kept in the profile for OpenVPN server setup scenarios
-
-### Xray
-
-- `Disguised as traffic from`: updates `streamSettings.realitySettings.serverName`
-- `XRay port`: updates the port of the first outbound node in the Xray config
-
-In Android OXray mode, the main Xray outbound is configured to use a local SOCKS outbound tagged as the OpenVPN underlay. The old system-interface `sendThrough` mode is not used.
-
-### DNS
-
-- `Use custom DNS`: enables custom DNS for the profile
-- `Primary DNS`: primary DNS server
-- `Secondary DNS`: fallback DNS server
-
-## Export
-
-This branch supports:
-
-- native OXray JSON export
-- QR export for native OXray profiles
-
-Export is available from the sharing page and from the OXray settings page.
-
-Default file name:
-
-- `amnezia_for_oxray_native.json`
-
-## Technical Details
-
-- The OXray profile is stored as a composite container with `openvpn` and `xray` blocks.
-- Android OXray mode creates one app-owned `VpnService` interface.
-- The TUN file descriptor is passed to tun2socks.
-- Xray is started without creating a second VPN interface.
-- The OpenVPN backend runs in userspace and exposes an internal local SOCKS5 endpoint.
-- Xray gets an additional SOCKS outbound that points to that local OpenVPN underlay.
-- The main Xray outbound uses `proxySettings.transportLayer=true` to route its transport through the OpenVPN underlay.
-- OpenVPN transport sockets are protected with `VpnService.protect()` so they do not loop back into the upper VPN TUN.
-- Direct Xray socket protection is intentionally not used in OXray mode because Xray must go through the local OpenVPN underlay.
-
-## Getting The Sources
-
-After cloning the repository, initialize submodules:
+Make sure to pull all submodules after checking out the repo.
 
 ```bash
 git submodule update --init --recursive
 ```
 
-This branch is based on the Amnezia Client codebase. Use the upstream project documentation for the general build process and project structure. This README describes the OXray behavior in this branch.
+## Hacking guide
 
-## Security
+Want to contribute? Welcome!
 
-Do not commit real user configs, exported QR payloads, private keys, certificates, test accounts, logs, APK files, or local diagnostic output.
+### Build requirements
 
-This branch keeps local artifacts out of commits, including:
+* [`CMake`](https://cmake.org/download/)
+* Compiler and underlying build system, depending on the target:
+  - [Linux] Any of `make` and `gcc`
+  - [Apple] [`Xcode`](https://developer.apple.com/xcode/) or [`Xcode command line tools`](https://developer.apple.com/xcode/)
+  - [Windows] [`Visual Studio 2022`](https://aka.ms/vs/17/release/vs_community.exe) or [`VS 2022 Build Tools`](https://aka.ms/vs/17/release/vs_buildtools.exe)
+  - [Android] [`Android SDK`](#installing-android-sdk) and [`Ninja`](https://ninja-build.org/)
+* [`Qt 6.10+`](https://www.qt.io/download-open-source) with the following modules:
+  - Core module for targeting platform (Desktop/Android/iOS)
+  - Qt 5 Compatibility module
+  - Qt Remote Objects
+* [`Conan`](https://conan.io/downloads) package manager
+  - On MacOS is enough just to use `homebrew` or install it in `.venv` in project root
+  - Other systems must have it in `PATH`
+* (Optional) Installer dependencies:
+  - [Windows/Linux] [`Qt Installer Framework`](https://www.qt.io/download-open-source)
+  - [Windows] [`WIX toolset`](https://github.com/wixtoolset/wix/releases)
 
-- temporary `.pem` files
-- local test `.ovpn` files
-- local build logs
-- local build and export directories
-- Android logcat captures
-- generated APK files
+### Building the project using scripts
 
-## Base Project
+* Run scripts located in `deploy` directory
+* Basically, if dependencies are located in default installation paths, the scripts will find them automatically.
+* If they differ, specify them using the following variables:
+  - `QT_INSTALL_DIR` - Qt root installation folder
+  - `QT_ROOT_PATH`   - Qt framework root directory
+  - `QIF_ROOT_PATH`  - Qt Installer Framework root path
+  - `ANDROID_HOME`   - Path to Android SDK root folder
+  - and others. Check scripts for more
 
-- upstream: [amnezia-vpn/amnezia-client](https://github.com/amnezia-vpn/amnezia-client)
-- this branch: a fork for importing, editing, exporting, and running the `Xray over OpenVPN userspace underlay` chain inside Amnezia Client
+Unix-like:
+```bash
+# Build executables for the host platform
+deploy/build.sh
+
+# Or just
+deploy/build.sh
+
+# Build executables and installers for the host platform
+deploy/build.sh --installer all
+
+# Build Android APK and AAB
+deploy/build.sh -t android --aab
+
+# Call for help
+deploy/build.sh -h
+```
+
+Windows:
+```batch
+:: Build executables for Windows
+deploy/build.bat
+
+:: Build executables with IFW installer for Windows
+deploy/build.bat --installer ifw
+
+:: Build executables with IFW and WIX installer for Windows
+deploy/build.bat --installer ifw --installer wix
+
+:: Or just
+deploy/build.bat --installer all
+```
+
+### Developing the project in IDEs
+
+* Basically, you can use any IDE that handles CMake and Qt kits properly to run configure and build steps, and to navigate through the code nicely. For example:
+  - `Qt Creator`
+  - `Visual Studio Code` with `Qt Extension Pack`
+  - and so on
+
+* To use `Xcode`, you have to configure project first by using `cmake`. The easiest way to do it is to use `Qt Creator` for configuration. Then open `AmneziaVPN.xcodeproj` file from the build folder by using `Xcode`. Note that none of the files changed are saved - the files actually getting changed in build directory. Copy them manually if necessary
+
+* `Android studio` could be used in the same way - just configure the project by using `cmake` manually or by using `Qt Creator`. Open `<build-dir>/client/android-build` in `Android studio` then. Do not forget to copy the changes - everything you do is saved under the build directory actually.
+
+### Installing Android SDK
+
+* Android SDK could be installed using the following methods:
+  - Using `Qt Creator`. Use `Preferences`->`SDKs`
+  - Using `Android studio`. By default it installs necessary `SDKs` automatically during the installation
+  - Manually by using `sdk-manager`. Check [this](https://developer.android.com/tools) page for details
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (see LICENSE) and also includes third-party components distributed under their own terms (see THIRD_PARTY_LICENSES.md).
+
+## Donate
+
+Patreon: [https://www.patreon.com/amneziavpn](https://www.patreon.com/amneziavpn)
+
+Bitcoin: bc1qmhtgcf9637rl3kqyy22r2a8wa8laka4t9rx2mf <br>
+USDT BEP20: 0x6abD576765a826f87D1D95183438f9408C901bE4 <br>
+USDT TRC20: TELAitazF1MZGmiNjTcnxDjEiH5oe7LC9d <br>
+XMR: 48spms39jt1L2L5vyw2RQW6CXD6odUd4jFu19GZcDyKKQV9U88wsJVjSbL4CfRys37jVMdoaWVPSvezCQPhHXUW5UKLqUp3 <br> 
+TON: UQDpU1CyKRmg7L8mNScKk9FRc2SlESuI7N-Hby4nX-CcVmns
+## Acknowledgments
+
+This project is tested with BrowserStack.
+We express our gratitude to [BrowserStack](https://www.browserstack.com) for supporting our project.

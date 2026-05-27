@@ -1,173 +1,180 @@
-# Amnezia Client OXray Branch
+# Amnezia VPN
 
-Эта ветка содержит форк Amnezia Client с поддержкой `OXray`.
+### _Лучший клиент для создания VPN на собственном сервере_
 
-## Что такое OXray
+[![Build Status](https://github.com/amnezia-vpn/amnezia-client/actions/workflows/deploy.yml/badge.svg?branch=dev)](https://github.com/amnezia-vpn/amnezia-client/actions/workflows/deploy.yml?query=branch:dev)
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/amnezia-vpn/amnezia-client)
 
-В этом проекте `OXray` не является отдельным низкоуровневым VPN-протоколом. Это составной профиль, который объединяет:
+### [English](https://github.com/amnezia-vpn/amnezia-client/blob/dev/README.md) | Русский
+[AmneziaVPN](https://amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-ru) — это open source VPN-клиент, ключевая особенность которого заключается в возможности развернуть собственный VPN на вашем сервере.
 
-- `OpenVPN` как первый транспортный слой
-- `XRay` как второй слой для маршрутизации и маскировки трафика
+[![Image](https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/uipic4.png)](https://amnezia.org)
 
-Цепочка подключения в клиенте выглядит так:
+### [Сайт](https://amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-ru) | [Зеркало сайта](https://storage.googleapis.com/amnezia/amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-ru-mirror) | [Документация](https://docs.amnezia.org) | [Решение проблем](https://docs.amnezia.org/troubleshooting)
 
-`device -> OpenVPN server -> XRay server -> internet`
+> [!TIP]
+> Если [сайт Amnezia](https://amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-ru) заблокирован в вашем регионе, вы можете воспользоваться [ссылкой на зеркало](https://storage.googleapis.com/amnezia/amnezia.org?utm_source=github&utm_campaign=amnezia_website-readme-ru-mirror).
 
-Такой режим полезен, когда нужно:
+<a href="https://storage.googleapis.com/amnezia/amnezia.org?m-path=/ru/downloads&utm_source=github&utm_campaign=amnezia_button-readme-ru-mirror"><img src="https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/download-website-ru.svg" width="150" style="max-width: 100%; margin-right: 10px"></a>
 
-- использовать уже готовый `.ovpn`-профиль
-- добавить XRay поверх OpenVPN
-- получить более гибкую маршрутизацию и маскировку, чем в обычном OpenVPN
-- хранить связку `OpenVPN + XRay` как один профиль внутри Amnezia Client
 
-## Что добавлено в этой ветке
+[Все релизы](https://github.com/amnezia-vpn/amnezia-client/releases)
 
-- новый тип протокола `OXray`
-- импорт из двух файлов: `OpenVPN (.ovpn)` + `XRay (.json/.txt/.conf)`
-- нативный формат импорта и экспорта `OXray`
-- отдельная страница настроек `OXray`
-- экспорт нативного `OXray` JSON и QR
-- интеграция OXray в Android-часть клиента
+<br/>
 
-## Как загрузить конфигурацию в OXray
+<a href="https://www.testiny.io"><img src="https://github.com/amnezia-vpn/amnezia-client/blob/dev/metadata/img-readme/testiny.png" height="28px"></a>
 
-Поддерживаются два основных сценария.
+## Особенности
 
-### 1. Импорт из OpenVPN и XRay файлов
+- Простой в использовании — введите IP-адрес, SSH-логин и пароль, и Amnezia автоматически установит VPN-контейнеры Docker на ваш сервер и подключится к VPN.
+- Классические VPN-протоколы: OpenVPN, WireGuard и IKEv2.
+- Протоколы с маскировкой трафика (обфускацией): OpenVPN с плагином [Cloak](https://github.com/cbeuw/Cloak), Shadowsocks (OpenVPN over Shadowsocks), [AmneziaWG](https://docs.amnezia.org/documentation/amnezia-wg/) and XRay.
+- Поддержка Split Tunneling — добавляйте любые сайты или приложения в список, чтобы включить VPN только для них.
+- Поддерживает платформы: Windows, macOS, Linux, Android, iOS.
+- Поддержка конфигурации протокола AmneziaWG на [бета-прошивке Keenetic](https://docs.keenetic.com/ua/air/kn-1611/en/6319-latest-development-release.html#UUID-186c4108-5afd-c10b-f38a-cdff6c17fab3_section-idm33192196168192-improved).
 
-Используйте этот вариант, если у вас уже есть:
+## Ссылки
 
-- клиентский конфиг `OpenVPN` в формате `.ovpn`
-- клиентский конфиг `XRay` в формате `.json`, `.txt` или `.conf`
+- [https://amnezia.org](https://amnezia.org) - Веб-сайт проекта | [Альтернативная ссылка (зеркало)](https://storage.googleapis.com/kldscp/amnezia.org)
+- [https://docs.amnezia.org](https://docs.amnezia.org) - Документация
+- [https://www.reddit.com/r/AmneziaVPN](https://www.reddit.com/r/AmneziaVPN) - Reddit  
+- [https://t.me/amnezia_vpn_en](https://t.me/amnezia_vpn_en) - Канал поддержки в Telegram (Английский)
+- [https://t.me/amnezia_vpn_ir](https://t.me/amnezia_vpn_ir) - Канал поддержки в Telegram (Фарси)
+- [https://t.me/amnezia_vpn_mm](https://t.me/amnezia_vpn_mm) - Канал поддержки в Telegram (Мьянма) 
+- [https://t.me/amnezia_vpn](https://t.me/amnezia_vpn) - Канал поддержки в Telegram  (Русский)
+- [https://vpnpay.io/en/amnezia-premium/](https://vpnpay.io/en/amnezia-premium/) - Amnezia Premium | [Зеркало](https://storage.googleapis.com/kldscp/vpnpay.io/ru/amnezia-premium\)
 
-Шаги в приложении:
+## Технологии
 
-1. Откройте экран добавления подключения.
-2. Выберите `OXray (OpenVPN + XRay)`.
-3. Укажите файл OpenVPN.
-4. Укажите файл XRay.
-5. Проверьте собранный профиль и сохраните его.
+AmneziaVPN использует несколько проектов с открытым исходным кодом:
 
-Клиент объединит оба файла в один профиль Amnezia с контейнером `amnezia-oxray`.
+- [OpenSSL](https://www.openssl.org/)
+- [OpenVPN](https://openvpn.net/)
+- [Qt](https://www.qt.io/)
+- [LibSsh](https://libssh.org)
+- [WireGuard](https://www.wireguard.com/)
+- [Xray-core](https://xtls.github.io/en/)
+- [Conan](https://conan.io/)
+- и другие...
 
-### 2. Импорт из нативного OXray JSON
+## Помощь с переводами
 
-Используйте этот вариант, если профиль раньше был экспортирован из этой ветки.
+Загрузите самые актуальные файлы перевода.
 
-Маркер нативного формата:
+Перейдите на [вкладку "Actions"](https://github.com/amnezia-vpn/amnezia-client/actions?query=is%3Asuccess+branch%3Adev), нажмите на первую строку. Затем прокрутите вниз до раздела "Artifacts" и скачайте "AmneziaVPN_translations".
 
-```json
-{
-  "format": "amnezia-oxray-native",
-  "version": 1
-}
-```
+Распакуйте этот файл. Каждый файл с расширением *.ts содержит строки для соответствующего языка.
 
-Шаги в приложении:
+Переведите или исправьте строки в одном или нескольких файлах *.ts и загрузите их обратно в этот репозиторий в папку ``client/translations``. Это можно сделать через веб-интерфейс или любым другим знакомым вам способом.
 
-1. Откройте `File with connection settings`.
-2. Выберите экспортированный нативный `.json`.
-3. Проверьте профиль и импортируйте его.
+## Проверка исходного кода
 
-Такой же профиль можно передавать через QR-экспорт.
-
-## Нативный формат OXray
-
-Нативный экспорт представляет собой JSON с основными полями:
-
-```json
-{
-  "format": "amnezia-oxray-native",
-  "version": 1,
-  "description": "My OXray profile",
-  "openvpnConfig": "<полный текст .ovpn>",
-  "xrayConfig": {
-    "outbounds": []
-  },
-  "useCustomDns": true,
-  "dns1": "1.1.1.1",
-  "dns2": "8.8.8.8"
-}
-```
-
-Смысл полей:
-
-- `openvpnConfig`: исходный текст клиентского OpenVPN-конфига
-- `xrayConfig`: полный клиентский JSON-конфиг XRay
-- `description`: имя профиля в приложении
-- `useCustomDns`, `dns1`, `dns2`: опциональные DNS-настройки профиля
-
-## Настройки OXray
-
-Страница настроек делится на блоки `OpenVPN`, `XRay` и `DNS`.
-
-### OpenVPN
-
-- `VPN address subnet`: внутренняя подсеть OpenVPN-слоя
-- `Network protocol`: переключает транспорт OpenVPN между `udp` и `tcp`
-- `OpenVPN port`: переписывает директиву `remote ... <port>` в клиентском конфиге
-- `Auto-negotiate encryption`: управляет согласованием шифрования OpenVPN и поведением `ncp-disable`
-- `Hash`: задаёт значение `auth`
-- `Cipher`: задаёт значение `cipher`
-- `TLS auth`: включает или удаляет `tls-auth` в итоговом клиентском конфиге
-- `Block DNS requests outside of VPN`: включает или выключает `block-outside-dns`
-- `Additional client configuration commands`: добавляет управляемый пользовательский блок в итоговый OpenVPN-клиентский конфиг
-- `Additional server configuration commands`: сохраняется в профиле для сценариев серверной настройки OpenVPN
-
-### XRay
-
-- `Disguised as traffic from`: обновляет `streamSettings.realitySettings.serverName`
-- `XRay port`: обновляет порт первого outbound-узла в конфиге XRay
-
-### DNS
-
-- `Use custom DNS`: включает пользовательский DNS для профиля
-- `Primary DNS`: основной DNS-сервер
-- `Secondary DNS`: резервный DNS-сервер
-
-## Экспорт
-
-Ветка поддерживает:
-
-- экспорт нативного OXray JSON
-- экспорт QR для нативного OXray-профиля
-
-Экспорт доступен со страницы шаринга и со страницы настроек OXray.
-
-Имя файла по умолчанию:
-
-- `amnezia_for_oxray_native.json`
-
-## Технические детали
-
-- Профиль OXray хранится как составной контейнер с блоками `openvpn` и `xray`.
-- Сначала запускается OpenVPN.
-- После успешного подключения OpenVPN подготавливается и запускается XRay.
-- Если OpenVPN и XRay указывают на один и тот же удалённый хост, клиент при необходимости подменяет XRay endpoint на адрес внутри туннеля.
-- DNS-настройки профиля накладываются поверх сгенерированных OpenVPN и XRay конфигов.
-
-## Получение исходников
-
-После клонирования репозитория инициализируйте подмодули:
+После клонирования репозитория обязательно загрузите все подмодули.
 
 ```bash
 git submodule update --init --recursive
 ```
 
-Эта ветка основана на кодовой базе Amnezia Client. Для общей сборки и структуры проекта используйте документацию upstream-проекта, а этот README описывает именно поведение OXray в данной ветке.
+## Руководство по разработке
 
-## Безопасность
+Хотите внести свой вклад? Добро пожаловать!
 
-Не коммитьте реальные пользовательские конфиги, экспортированные QR-пейлоады, приватные ключи, сертификаты и тестовые учётные данные.
+### Требования для сборки
 
-В этой ветке в `.gitignore` дополнительно вынесены типовые локальные артефакты:
+* [`CMake`](https://cmake.org/download/)
+* Компилятор и система сборки, в зависимости от таргета:
+  - [Linux] Любые `make` и `gcc`
+  - [Apple] [`Xcode`](https://developer.apple.com/xcode/) или [`Xcode command line tools`](https://developer.apple.com/xcode/)
+  - [Windows] [`Visual Studio 2022`](https://aka.ms/vs/17/release/vs_community.exe) или [`VS 2022 Build Tools`](https://aka.ms/vs/17/release/vs_buildtools.exe)
+  - [Android] [`Android SDK`](#установка-android-sdk) и [`Ninja`](https://ninja-build.org/)
+* [`Qt 6.10+`](https://www.qt.io/download-open-source) со следующими модулями:
+  - Основные модули для таргета (Desktop/Android/iOS)
+  - Qt 5 Compatibility module
+  - Qt Remote Objects
+* Пакетный менеджер [`Conan`](https://conan.io/downloads)
+  - На MacOS достаточно использовать `homebrew` или установить в `.venv` в корень проекта 
+  - Для остальных систем необходимо прописать пути в `PATH`
+* (Необязательно) Заивисимости для установщиков:
+  - [Windows/Linux] [`Qt Installer Framework`](https://www.qt.io/download-open-source)
+  - [Windows] [`WIX toolset`](https://github.com/wixtoolset/wix/releases)
 
-- временные `.pem`
-- локальные тестовые `.ovpn`
-- локальные build-логи
-- локальные папки сборки и экспорта
+### Сборка проекта через скрипты
 
-## Базовый проект
+* Запустите скрипты, находящиеся в папке `deploy`
+* Если все зависимости установлены в стандартных локациях, скрипт найдёт их самостоятельно
+* Если пути отличаются, их нужно явно указать используя:
+  - `QT_INSTALL_DIR` - корневая папка установки Qt
+  - `QT_ROOT_PATH`   - корневая папка Qt Framework
+  - `QIF_ROOT_PATH`  - корневая папка Qt Installer Framework
+  - `ANDROID_HOME`   - путь к Android SDK
+  - и другие. Их можно получить из вышеуказанных скриптов
 
-- upstream: [amnezia-vpn/amnezia-client](https://github.com/amnezia-vpn/amnezia-client)
-- эта ветка: форк для импорта, редактирования, экспорта и запуска цепочки `OpenVPN + XRay` внутри Amnezia Client
+Unix-like:
+```bash
+# Build executables for the host platform
+deploy/build.sh
+
+# Or just
+deploy/build.sh
+
+# Build executables and installers for the host platform
+deploy/build.sh --installer all
+
+# Build Android APK and AAB
+deploy/build.sh -t android --aab
+
+# Call for help
+deploy/build.sh -h
+```
+
+Windows:
+```batch
+:: Build executables for Windows
+deploy/build.bat
+
+:: Build executables with IFW installer for Windows
+deploy/build.bat --installer ifw
+
+:: Build executables with IFW and WIX installer for Windows
+deploy/build.bat --installer ifw --installer wix
+
+:: Or just
+deploy/build.bat --installer all
+```
+
+### Разработка в IDE
+
+* Можно использовать любые IDE которые умеют работать с CMake и находить Qt Kits. Например:
+  - `Qt Creator`
+  - `Visual Studio Code` with `Qt Extension Pack`
+  - и так далее
+
+* Для использования `Xcode` нужно сконфигурировать проект с помощью `cmake`. Самый простой способ это сделать - использовать `Qt Creator` для конфигурации. Затем, нужно открыть файл `AmneziaVPN.xcodeproj` из папки сборки с помощью `Xcode`. Учтите, что никакие файлы фактически не сохраняются - они сохраняются в директории сборки. Если требуется, скопируйте файлы вручную
+
+* `Android studio` может быть использована подобным вышеуказанному способу - нужно использовать `cmake` вручную или через `Qt Creator` для конфигурации. Далее, откройте `<build-dir>/client/android-build` в `Android studio`. Не забудьте скопировать изменённые файлы в папку с исходным кодом - все файлы, изменённые в IDE, сохраняются фактически в папке сборки.
+
+### Установка Android SDK
+
+* Android SDK может быть установлен следующими способами:
+  - Используя `Qt Creator`, через настройки в пунктах `Preferences`->`SDKs`
+  - Используя `Android studio`. По умолчанию необходимые `SDK` устанавливаются автоматически.
+  - Вручную, используя `sdk-manager`. Подробности можно найти [здесь](https://developer.android.com/tools)
+
+## Лицензия
+
+GPL v3.0
+
+## Донаты
+
+Patreon: [https://www.patreon.com/amneziavpn](https://www.patreon.com/amneziavpn)
+
+Bitcoin: bc1qmhtgcf9637rl3kqyy22r2a8wa8laka4t9rx2mf <br>
+USDT BEP20: 0x6abD576765a826f87D1D95183438f9408C901bE4 <br>
+USDT TRC20: TELAitazF1MZGmiNjTcnxDjEiH5oe7LC9d <br>
+XMR: 48spms39jt1L2L5vyw2RQW6CXD6odUd4jFu19GZcDyKKQV9U88wsJVjSbL4CfRys37jVMdoaWVPSvezCQPhHXUW5UKLqUp3 <br> 
+TON: UQDpU1CyKRmg7L8mNScKk9FRc2SlESuI7N-Hby4nX-CcVmns
+
+## Благодарности
+
+Этот проект тестируется с помощью BrowserStack.
+Мы выражаем благодарность [BrowserStack](https://www.browserstack.com) за поддержку нашего проекта.

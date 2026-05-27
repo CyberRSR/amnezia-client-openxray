@@ -185,7 +185,7 @@ Button {
     }
 
     onClicked: {
-        ServersModel.setProcessedServerIndex(ServersModel.defaultIndex)
+        ServersUiController.setProcessedServerIndex(ServersUiController.defaultServerIndex)
         ConnectionController.connectButtonClicked()
     }
 

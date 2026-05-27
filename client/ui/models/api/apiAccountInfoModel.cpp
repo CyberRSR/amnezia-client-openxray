@@ -3,7 +3,8 @@
 #include <QDateTime>
 #include <QJsonObject>
 
-#include "core/api/apiUtils.h"
+#include "core/utils/api/apiUtils.h"
+#include "core/utils/serverConfigUtils.h"
 #include "logger.h"
 
 namespace
@@ -28,22 +29,23 @@ QVariant ApiAccountInfoModel::data(const QModelIndex &index, int role) const
 
     switch (role) {
     case SubscriptionStatusRole: {
-        if (m_accountInfoData.configType == apiDefs::ConfigType::AmneziaFreeV3) {
+        if (m_accountInfoData.configType == serverConfigUtils::ConfigType::AmneziaFreeV3) {
             return tr("Active");
         }
 
-        return apiUtils::isSubscriptionExpired(m_accountInfoData.subscriptionEndDate) ? tr("<p><a style=\"color: #EB5757;\">Inactive</a>")
-                                                                                      : tr("<p><a style=\"color: #28c840;\">Active</a>");
+        return apiUtils::isSubscriptionExpired(m_accountInfoData.subscriptionEndDate)
+                ? QStringLiteral("<p><a style=\"color: #EB5757;\">%1</a>").arg(tr("Inactive"))
+                : QStringLiteral("<p><a style=\"color: #28c840;\">%1</a>").arg(tr("Active"));
     }
     case EndDateRole: {
-        if (m_accountInfoData.configType == apiDefs::ConfigType::AmneziaFreeV3) {
+        if (m_accountInfoData.configType == serverConfigUtils::ConfigType::AmneziaFreeV3) {
             return "";
         }
 
         return QDateTime::fromString(m_accountInfoData.subscriptionEndDate, Qt::ISODate).toLocalTime().toString("d MMM yyyy");
     }
     case ConnectedDevicesRole: {
-        if (m_accountInfoData.configType == apiDefs::ConfigType::AmneziaFreeV3) {
+        if (m_accountInfoData.configType == serverConfigUtils::ConfigType::AmneziaFreeV3) {
             return "";
         }
         return tr("%1 out of %2").arg(m_accountInfoData.activeDeviceCount).arg(m_accountInfoData.maxDeviceCount);
@@ -52,15 +54,11 @@ QVariant ApiAccountInfoModel::data(const QModelIndex &index, int role) const
         return m_accountInfoData.subscriptionDescription;
     }
     case IsComponentVisibleRole: {
-        return m_accountInfoData.configType == apiDefs::ConfigType::AmneziaPremiumV2
-                || m_accountInfoData.configType == apiDefs::ConfigType::AmneziaTrialV2
-                || m_accountInfoData.configType == apiDefs::ConfigType::ExternalPremium
-                || m_accountInfoData.configType == apiDefs::ConfigType::ExternalTrial;
+        return m_accountInfoData.configType == serverConfigUtils::ConfigType::AmneziaPremiumV2
+                || m_accountInfoData.configType == serverConfigUtils::ConfigType::ExternalPremium;
     }
     case IsSubscriptionRenewalAvailableRole: {
-        return m_accountInfoData.configType == apiDefs::ConfigType::AmneziaPremiumV2
-                || m_accountInfoData.configType == apiDefs::ConfigType::AmneziaTrialV2
-                || m_accountInfoData.configType == apiDefs::ConfigType::ExternalTrial;
+        return m_accountInfoData.isRenewalAvailable;
     }
     case HasExpiredWorkerRole: {
         for (int i = 0; i < m_issuedConfigsInfo.size(); i++) {
@@ -82,7 +80,7 @@ QVariant ApiAccountInfoModel::data(const QModelIndex &index, int role) const
         return false;
     }
     case IsSubscriptionExpiredRole: {
-        if (m_accountInfoData.configType == apiDefs::ConfigType::AmneziaFreeV3) {
+        if (m_accountInfoData.configType == serverConfigUtils::ConfigType::AmneziaFreeV3) {
             return false;
         }
         if (m_accountInfoData.isInAppPurchase) {
@@ -94,7 +92,7 @@ QVariant ApiAccountInfoModel::data(const QModelIndex &index, int role) const
         return apiUtils::isSubscriptionExpired(m_accountInfoData.subscriptionEndDate);
     }
     case IsSubscriptionExpiringSoonRole: {
-        if (m_accountInfoData.configType == apiDefs::ConfigType::AmneziaFreeV3) {
+        if (m_accountInfoData.configType == serverConfigUtils::ConfigType::AmneziaFreeV3) {
             return false;
         }
         if (m_accountInfoData.isInAppPurchase) {
@@ -126,12 +124,13 @@ void ApiAccountInfoModel::updateModel(const QJsonObject &accountInfoObject, cons
     accountInfoData.maxDeviceCount = accountInfoObject.value(apiDefs::key::maxDeviceCount).toInt();
     accountInfoData.subscriptionEndDate = accountInfoObject.value(apiDefs::key::subscriptionEndDate).toString();
 
-    accountInfoData.configType = apiUtils::getConfigType(serverConfig);
+    accountInfoData.configType = serverConfigUtils::configTypeFromJson(serverConfig);
 
     const QJsonObject apiConfig = serverConfig.value(apiDefs::key::apiConfig).toObject();
     accountInfoData.isInAppPurchase = apiConfig.value(apiDefs::key::isInAppPurchase).toBool(false);
 
     accountInfoData.subscriptionDescription = accountInfoObject.value(apiDefs::key::subscriptionDescription).toString();
+    accountInfoData.isRenewalAvailable = accountInfoObject.value(apiDefs::key::isRenewalAvailable).toBool(false);
 
     for (const auto &protocol : accountInfoObject.value(apiDefs::key::supportedProtocols).toArray()) {
         accountInfoData.supportedProtocols.push_back(protocol.toString());
