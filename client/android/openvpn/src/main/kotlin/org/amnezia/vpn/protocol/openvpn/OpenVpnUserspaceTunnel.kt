@@ -1,4 +1,4 @@
-package org.amnezia.vpn.protocol.xray
+package org.amnezia.vpn.protocol.openvpn
 
 import android.content.Context
 import android.net.VpnService
@@ -13,10 +13,14 @@ import java.io.InterruptedIOException
 import java.io.InputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketAddress
 import java.net.SocketTimeoutException
 import java.util.TreeMap
 import java.util.concurrent.ConcurrentHashMap
@@ -41,14 +45,12 @@ import org.amnezia.vpn.protocol.ProtocolState
 import org.amnezia.vpn.protocol.ProtocolState.CONNECTED
 import org.amnezia.vpn.protocol.ProtocolState.DISCONNECTED
 import org.amnezia.vpn.protocol.VpnStartException
-import org.amnezia.vpn.protocol.openvpn.OpenVpn
-import org.amnezia.vpn.protocol.openvpn.OpenVpnClient
-import org.amnezia.vpn.protocol.openvpn.OpenVpnConfig
 import org.amnezia.vpn.util.Log
 import org.amnezia.vpn.util.net.getLocalNetworks
 import org.json.JSONObject
 
 private const val USERSACE_TAG = "OpenVpnUserspace"
+private const val OPENVPN_USERSPACE_CHAIN_MTU = 1280
 private const val OPENVPN_USERSACE_CONNECT_TIMEOUT_MS = 45_000L
 private const val TCP_CONNECT_TIMEOUT_MS = 15_000L
 private const val TCP_ACK_TIMEOUT_MS = 8_000L
@@ -81,6 +83,7 @@ private const val SOCKS_PIPE_BUFFER_BYTES = 64 * 1024
 private const val PACKET_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024
 private const val LOCAL_SOCKS_SOCKET_BUFFER_BYTES = 2 * 1024 * 1024
 private const val OPENVPN_TRANSPORT_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024
+private const val UDP_RELAY_BUFFER_BYTES = 65_535
 private const val SLOW_VIRTUAL_TCP_CONNECT_MS = 500L
 private const val SLOW_VIRTUAL_TCP_ACK_MS = 2_000L
 
@@ -92,14 +95,22 @@ private fun traceUserspace(message: String) {
     AndroidLog.d(USERSACE_TAG, message)
 }
 
-internal data class OpenVpnUnderlaySettings(
+data class OpenVpnUnderlaySettings(
     val host: String,
     val port: Int,
     val username: String,
     val password: String
 )
 
-internal class OpenVpnUserspaceTunnel : OpenVpn() {
+class OpenVpnUdpRelayHandle(
+    val host: String,
+    val port: Int,
+    private val closeAction: () -> Unit
+) : Closeable {
+    override fun close() = closeAction()
+}
+
+class OpenVpnUserspaceTunnel : OpenVpn() {
     @Volatile
     private var router: UserspaceTcpRouter? = null
     private var socksServer: OpenVpnSocksServer? = null
@@ -133,7 +144,7 @@ internal class OpenVpnUserspaceTunnel : OpenVpn() {
 
         val connected = CompletableDeferred<Unit>()
         val configBuilder = OpenVpnConfig.Builder().apply {
-            setMtu(OXRAY_CHAIN_MTU)
+            setMtu(OPENVPN_USERSPACE_CHAIN_MTU)
         }
         openVpnConnected = false
 
@@ -173,6 +184,12 @@ internal class OpenVpnUserspaceTunnel : OpenVpn() {
         val port = server.start()
         Log.i(USERSACE_TAG, "OpenVPN userspace SOCKS backend listening on 127.0.0.1:$port")
         return OpenVpnUnderlaySettings("127.0.0.1", port, underlayUser, underlayPass)
+    }
+
+    fun startUdpRelay(host: String, port: Int): OpenVpnUdpRelayHandle {
+        val activeRouter = router?.takeUnless { it.isClosed }
+            ?: throw VpnStartException("OpenVPN userspace packet router is not ready")
+        return activeRouter.startUdpRelay(host, port)
     }
 
     override fun stopVpn() {
@@ -753,6 +770,7 @@ private class UserspaceTcpRouter(
     private val localAddressInt = ipv4ToInt(localAddress.address)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connections = ConcurrentHashMap<Int, VirtualTcpConnection>()
+    private val udpRelays = ConcurrentHashMap<Int, VirtualUdpRelay>()
     private val packetWriteLock = Object()
     private val nextPort = AtomicInteger(30_000 + Random.nextInt(10_000))
     private val nextIpId = AtomicInteger(Random.nextInt(0xffff))
@@ -793,6 +811,31 @@ private class UserspaceTcpRouter(
         } catch (e: Exception) {
             connections.remove(localPort)
             connection.close("connect failed: ${e.message ?: e::class.java.simpleName}")
+            throw e
+        }
+    }
+
+    fun startUdpRelay(host: String, port: Int): OpenVpnUdpRelayHandle {
+        if (closed) {
+            throw EOFException("OpenVPN userspace router is closed")
+        }
+        val address = InetAddress.getByName(host) as? Inet4Address
+            ?: throw VpnStartException("OpenVPN userspace UDP relay supports only IPv4 targets: $host")
+        val localPort = allocatePort()
+        val relay = VirtualUdpRelay(
+            router = this,
+            localAddress = localAddressInt,
+            remoteAddress = ipv4ToInt(address.address),
+            localPort = localPort,
+            remotePort = port
+        )
+        udpRelays[localPort] = relay
+        try {
+            relay.start()
+            return relay.handle()
+        } catch (e: Exception) {
+            udpRelays.remove(localPort)
+            relay.close()
             throw e
         }
     }
@@ -843,8 +886,48 @@ private class UserspaceTcpRouter(
         }
     }
 
+    internal fun sendUdp(
+        localAddress: Int,
+        remoteAddress: Int,
+        localPort: Int,
+        remotePort: Int,
+        payload: ByteArray,
+        payloadOffset: Int,
+        payloadLength: Int
+    ) {
+        if (closed) {
+            return
+        }
+        val packet = buildIpv4UdpPacket(
+            srcIp = localAddress,
+            dstIp = remoteAddress,
+            srcPort = localPort,
+            dstPort = remotePort,
+            ipId = nextIpId.getAndIncrement() and 0xffff,
+            payload = payload,
+            payloadOffset = payloadOffset,
+            payloadLength = payloadLength
+        )
+        try {
+            synchronized(packetWriteLock) {
+                if (!closed) {
+                    Os.write(packetFd, packet, 0, packet.size)
+                }
+            }
+        } catch (e: Exception) {
+            if (!closed) {
+                closeAfterPacketFdError(e)
+            }
+            throw e
+        }
+    }
+
     internal fun remove(localPort: Int) {
         connections.remove(localPort)
+    }
+
+    internal fun removeUdp(localPort: Int) {
+        udpRelays.remove(localPort)
     }
 
     internal fun activeConnectionCount(): Int = connections.size
@@ -857,7 +940,9 @@ private class UserspaceTcpRouter(
         packetReaderThread?.interrupt()
         scope.cancel()
         connections.values.forEach { it.close("router close") }
+        udpRelays.values.forEach { it.close() }
         connections.clear()
+        udpRelays.clear()
         runCatching { Os.close(packetFd) }
     }
 
@@ -870,7 +955,7 @@ private class UserspaceTcpRouter(
             } else {
                 port
             }
-            if (!connections.containsKey(normalized)) {
+            if (!connections.containsKey(normalized) && !udpRelays.containsKey(normalized)) {
                 return normalized
             }
         }
@@ -887,16 +972,31 @@ private class UserspaceTcpRouter(
                 break
             }
             if (read <= 0) continue
-            val packet = parseIpv4TcpPacket(buffer, read) ?: continue
-            val connection = connections[packet.dstPort] ?: continue
+            val tcpPacket = parseIpv4TcpPacket(buffer, read)
+            if (tcpPacket != null) {
+                val connection = connections[tcpPacket.dstPort] ?: continue
+                try {
+                    connection.onPacket(tcpPacket)
+                } catch (e: Exception) {
+                    Log.w(
+                        USERSACE_TAG,
+                        "Closing virtual TCP ${tcpPacket.dstPort} after packet handling error: ${e.message ?: e}"
+                    )
+                    connection.close("packet handling error: ${e.message ?: e::class.java.simpleName}")
+                }
+                continue
+            }
+
+            val udpPacket = parseIpv4UdpPacket(buffer, read) ?: continue
+            val relay = udpRelays[udpPacket.dstPort] ?: continue
             try {
-                connection.onPacket(packet)
+                relay.onPacket(udpPacket)
             } catch (e: Exception) {
                 Log.w(
                     USERSACE_TAG,
-                    "Closing virtual TCP ${packet.dstPort} after packet handling error: ${e.message ?: e}"
+                    "Closing virtual UDP ${udpPacket.dstPort} after packet handling error: ${e.message ?: e}"
                 )
-                connection.close("packet handling error: ${e.message ?: e::class.java.simpleName}")
+                relay.close()
             }
         }
         if (!closed) {
@@ -956,6 +1056,90 @@ private class UserspaceTcpRouter(
                     )
                     connection.close("gap ACK error: ${e.message ?: e::class.java.simpleName}")
                 }
+            }
+        }
+    }
+}
+
+private class VirtualUdpRelay(
+    private val router: UserspaceTcpRouter,
+    private val localAddress: Int,
+    private val remoteAddress: Int,
+    private val localPort: Int,
+    private val remotePort: Int
+) : Closeable {
+    private val loopback = InetAddress.getByName("127.0.0.1")
+    private val socket = DatagramSocket(InetSocketAddress(loopback, 0)).apply {
+        receiveBufferSize = LOCAL_SOCKS_SOCKET_BUFFER_BYTES
+        sendBufferSize = LOCAL_SOCKS_SOCKET_BUFFER_BYTES
+    }
+    private var readerThread: Thread? = null
+    @Volatile
+    private var clientEndpoint: SocketAddress? = null
+    @Volatile
+    private var closed = false
+
+    fun start() {
+        readerThread = Thread({ readLocalDatagrams() }, "OpenVpnUserspaceUdpRelay-$localPort").apply {
+            isDaemon = true
+            priority = Thread.MAX_PRIORITY
+            start()
+        }
+        Log.i(
+            USERSACE_TAG,
+            "OpenVPN userspace UDP relay listening on 127.0.0.1:${socket.localPort} " +
+                "for ${intToIpv4(remoteAddress)}:$remotePort"
+        )
+    }
+
+    fun handle(): OpenVpnUdpRelayHandle =
+        OpenVpnUdpRelayHandle("127.0.0.1", socket.localPort) { close() }
+
+    fun onPacket(packet: UdpPacket) {
+        val endpoint = clientEndpoint ?: return
+        val payload = packet.payloadBuffer.copyOfRange(packet.payloadOffset, packet.payloadOffset + packet.payloadLength)
+        socket.send(DatagramPacket(payload, payload.size, endpoint))
+    }
+
+    override fun close() {
+        if (closed) {
+            return
+        }
+        closed = true
+        router.removeUdp(localPort)
+        socket.close()
+    }
+
+    private fun readLocalDatagrams() {
+        val buffer = ByteArray(UDP_RELAY_BUFFER_BYTES)
+        while (!closed) {
+            val packet = DatagramPacket(buffer, buffer.size)
+            try {
+                socket.receive(packet)
+            } catch (e: Exception) {
+                if (!closed) {
+                    Log.w(USERSACE_TAG, "OpenVPN userspace UDP relay stopped: ${e.message ?: e}")
+                    close()
+                }
+                return
+            }
+            clientEndpoint = packet.socketAddress
+            try {
+                router.sendUdp(
+                    localAddress = localAddress,
+                    remoteAddress = remoteAddress,
+                    localPort = localPort,
+                    remotePort = remotePort,
+                    payload = packet.data,
+                    payloadOffset = packet.offset,
+                    payloadLength = packet.length
+                )
+            } catch (e: Exception) {
+                if (!closed) {
+                    Log.w(USERSACE_TAG, "OpenVPN userspace UDP relay send failed: ${e.message ?: e}")
+                    close()
+                }
+                return
             }
         }
     }
@@ -1725,6 +1909,16 @@ private data class TcpPacket(
     val payloadLength: Int
 )
 
+private data class UdpPacket(
+    val srcIp: Int,
+    val dstIp: Int,
+    val srcPort: Int,
+    val dstPort: Int,
+    val payloadBuffer: ByteArray,
+    val payloadOffset: Int,
+    val payloadLength: Int
+)
+
 private const val TCP_FIN = 0x01
 private const val TCP_SYN = 0x02
 private const val TCP_RST = 0x04
@@ -1754,6 +1948,24 @@ private fun parseIpv4TcpPacket(buffer: ByteArray, length: Int): TcpPacket? {
     val payloadOffset = ihl + tcpHeaderLength
     val payloadLength = totalLength - payloadOffset
     return TcpPacket(srcIp, dstIp, srcPort, dstPort, seq, ack, flags, buffer, payloadOffset, payloadLength)
+}
+
+private fun parseIpv4UdpPacket(buffer: ByteArray, length: Int): UdpPacket? {
+    if (length < 28) return null
+    val version = (buffer[0].toInt() ushr 4) and 0x0f
+    val ihl = (buffer[0].toInt() and 0x0f) * 4
+    if (version != 4 || ihl < 20 || length < ihl + 8) return null
+    if ((buffer[9].toInt() and 0xff) != 17) return null
+    val totalLength = u16(buffer, 2).coerceAtMost(length)
+    val srcIp = u32(buffer, 12)
+    val dstIp = u32(buffer, 16)
+    val srcPort = u16(buffer, ihl)
+    val dstPort = u16(buffer, ihl + 2)
+    val udpLength = u16(buffer, ihl + 4)
+    if (udpLength < 8 || totalLength < ihl + udpLength) return null
+    val payloadOffset = ihl + 8
+    val payloadLength = udpLength - 8
+    return UdpPacket(srcIp, dstIp, srcPort, dstPort, buffer, payloadOffset, payloadLength)
 }
 
 private fun buildIpv4TcpPacket(
@@ -1801,6 +2013,42 @@ private fun buildIpv4TcpPacket(
         System.arraycopy(payload, payloadOffset, packet, tcp + tcpHeaderLength, payloadLength)
     }
     putU16(packet, tcp + 16, tcpChecksum(packet, tcp, tcpHeaderLength + payloadLength, srcIp, dstIp))
+    return packet
+}
+
+private fun buildIpv4UdpPacket(
+    srcIp: Int,
+    dstIp: Int,
+    srcPort: Int,
+    dstPort: Int,
+    ipId: Int,
+    payload: ByteArray,
+    payloadOffset: Int,
+    payloadLength: Int
+): ByteArray {
+    val ipHeaderLength = 20
+    val udpHeaderLength = 8
+    val totalLength = ipHeaderLength + udpHeaderLength + payloadLength
+    val packet = ByteArray(totalLength)
+    packet[0] = 0x45
+    packet[1] = 0
+    putU16(packet, 2, totalLength)
+    putU16(packet, 4, ipId)
+    putU16(packet, 6, 0x4000)
+    packet[8] = 64
+    packet[9] = 17
+    putU32(packet, 12, srcIp)
+    putU32(packet, 16, dstIp)
+    putU16(packet, 10, checksum(packet, 0, ipHeaderLength))
+
+    val udp = ipHeaderLength
+    putU16(packet, udp, srcPort)
+    putU16(packet, udp + 2, dstPort)
+    putU16(packet, udp + 4, udpHeaderLength + payloadLength)
+    putU16(packet, udp + 6, 0)
+    if (payloadLength > 0) {
+        System.arraycopy(payload, payloadOffset, packet, udp + udpHeaderLength, payloadLength)
+    }
     return packet
 }
 

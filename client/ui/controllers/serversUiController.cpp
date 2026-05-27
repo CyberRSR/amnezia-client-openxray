@@ -114,6 +114,23 @@ void ServersUiController::setDefaultContainer(const QString &serverId, int conta
     updateModel();
 }
 
+bool ServersUiController::updateProcessedContainerConfig(int containerIndex, const QJsonObject &containerConfig)
+{
+    if (m_processedServerId.isEmpty()) {
+        return false;
+    }
+
+    auto container = static_cast<DockerContainer>(containerIndex);
+    ContainerConfig parsedConfig = ContainerConfig::fromJson(containerConfig);
+    parsedConfig.container = container;
+    if (!m_serversController->updateContainerConfig(m_processedServerId, container, parsedConfig)) {
+        return false;
+    }
+
+    updateModel();
+    return true;
+}
+
 void ServersUiController::toggleAmneziaDns(bool enabled)
 {
     m_settingsController->toggleAmneziaDns(enabled);
@@ -238,7 +255,8 @@ bool ServersUiController::isDefaultServerDefaultContainerHasSplitTunneling() con
     const DockerContainer defaultContainer = m_serversController->getDefaultContainer(defaultServerId);
     const ContainerConfig containerConfig = m_serversController->getContainerConfig(defaultServerId, defaultContainer);
     
-    if (defaultContainer == DockerContainer::Awg || defaultContainer == DockerContainer::WireGuard) {
+    if (defaultContainer == DockerContainer::Awg || defaultContainer == DockerContainer::WireGuard
+        || defaultContainer == DockerContainer::OWG) {
         auto hasSplitTunnelingFromAllowedIps = [](const QStringList& allowedIps, const QString& nativeConfig) -> bool {
             bool hasSplitTunneling = !allowedIps.isEmpty() && !allowedIps.contains("0.0.0.0/0");
             if (!hasSplitTunneling && !nativeConfig.isEmpty()) {
@@ -254,6 +272,15 @@ bool ServersUiController::isDefaultServerDefaultContainerHasSplitTunneling() con
                     return hasSplitTunnelingFromAllowedIps(
                         awgConfig->clientConfig->allowedIps,
                         awgConfig->clientConfig->nativeConfig
+                    );
+                }
+            }
+        } else if (defaultContainer == DockerContainer::OWG) {
+            if (const auto* owgConfig = containerConfig.getOwgProtocolConfig()) {
+                if (owgConfig->awgConfig.hasClientConfig()) {
+                    return hasSplitTunnelingFromAllowedIps(
+                        owgConfig->awgConfig.clientConfig->allowedIps,
+                        owgConfig->awgConfig.clientConfig->nativeConfig
                     );
                 }
             }

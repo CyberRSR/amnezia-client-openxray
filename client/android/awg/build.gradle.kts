@@ -14,5 +14,7 @@ android {
 dependencies {
     compileOnly(project(":utils"))
     compileOnly(project(":protocolApi"))
+    compileOnly(project(":openvpn"))
     implementation(project(":wireguard"))
+    implementation(libs.kotlinx.coroutines)
 }

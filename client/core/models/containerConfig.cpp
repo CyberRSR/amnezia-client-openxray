@@ -47,6 +47,9 @@ ContainerConfig ContainerConfig::fromJson(const QJsonObject& json)
     QString protoName = ProtocolUtils::protoToString(protoType);
     
     QJsonObject protoJson = json.value(protoName).toObject();
+    if (protoType == Proto::OWG && protoJson.isEmpty()) {
+        protoJson = json;
+    }
     
     config.protocolConfig = ProtocolConfig::fromJson(protoJson, protoType);
     
@@ -61,6 +64,16 @@ AwgProtocolConfig* ContainerConfig::getAwgProtocolConfig()
 const AwgProtocolConfig* ContainerConfig::getAwgProtocolConfig() const
 {
     return protocolConfig.as<AwgProtocolConfig>();
+}
+
+OwgProtocolConfig* ContainerConfig::getOwgProtocolConfig()
+{
+    return protocolConfig.as<OwgProtocolConfig>();
+}
+
+const OwgProtocolConfig* ContainerConfig::getOwgProtocolConfig() const
+{
+    return protocolConfig.as<OwgProtocolConfig>();
 }
 
 WireGuardProtocolConfig* ContainerConfig::getWireGuardProtocolConfig()

@@ -181,6 +181,19 @@
         </service>
 
         <service
+            android:name=".OwgService"
+            android:process=":amneziaOwgService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="systemExempted"
+            android:exported="false"
+            tools:ignore="ForegroundServicePermission">
+
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".OxrayService"
             android:process=":amneziaOxrayService"
             android:permission="android.permission.BIND_VPN_SERVICE"

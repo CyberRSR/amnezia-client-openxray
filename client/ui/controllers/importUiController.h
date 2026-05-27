@@ -21,6 +21,7 @@ public slots:
     void importConfig();
     void clearConfigFileName();
     bool extractConfigFromFile(const QString &fileName);
+    bool extractOwgConfigFromFiles(const QString &openVpnFileName, const QString &awgFileName);
     bool extractConfigFromData(QString data);
     bool extractConfigFromQr(const QByteArray &data);
     QString getConfig();

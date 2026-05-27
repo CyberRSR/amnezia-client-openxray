@@ -16,6 +16,7 @@
 #include "core/utils/protocolEnum.h"
 #include "core/models/containerConfig.h"
 #include "core/models/protocolConfig.h"
+#include "core/models/protocols/owgProtocolConfig.h"
 
 using namespace amnezia;
 using namespace ProtocolUtils;
@@ -210,6 +211,29 @@ QJsonObject ConnectionController::createConnectionConfiguration(const QPair<QStr
     auto configurator = ConfiguratorBase::create(proto, nullptr);
     ProtocolConfig processedConfig = configurator->processConfigWithLocalSettings(connectionSettings,
                                                                                   containerConfig.protocolConfig);
+
+    if (container == DockerContainer::OWG) {
+        const auto* owgConfig = processedConfig.as<OwgProtocolConfig>();
+        if (!owgConfig || !owgConfig->hasClientConfig()) {
+            return vpnConfiguration;
+        }
+
+        QJsonObject awgConfigData = owgConfig->awgClientConfigJson();
+        if (awgConfigData[configKey::mtu].toString().isEmpty()) {
+            awgConfigData[configKey::mtu] = protocols::awg::defaultMtu;
+        }
+        awgConfigData[configKey::isObfuscationEnabled] = true;
+
+        vpnConfiguration.insert(ProtocolUtils::key_proto_config_data(Proto::OpenVpn), owgConfig->openVpnClientConfigJson());
+        vpnConfiguration.insert(ProtocolUtils::key_proto_config_data(Proto::Awg), awgConfigData);
+        vpnConfiguration[configKey::vpnProto] = ProtocolUtils::protoToString(proto);
+        vpnConfiguration[configKey::dns1] = dns.first;
+        vpnConfiguration[configKey::dns2] = dns.second;
+        vpnConfiguration[configKey::hostName] = hostName;
+        vpnConfiguration[configKey::description] = description;
+        vpnConfiguration[configKey::configVersion] = configVersion;
+        return vpnConfiguration;
+    }
 
     QJsonObject vpnConfigData = processedConfig.getClientConfigJson();
     if (ContainerUtils::isAwgContainer(container) || container == DockerContainer::WireGuard) {

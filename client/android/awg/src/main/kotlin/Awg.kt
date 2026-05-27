@@ -4,7 +4,7 @@ import org.amnezia.vpn.protocol.wireguard.Wireguard
 import org.amnezia.vpn.protocol.wireguard.WireguardConfig
 import org.json.JSONObject
 
-class Awg : Wireguard() {
+open class Awg : Wireguard() {
 
     override val ifName: String = "awg0"
 

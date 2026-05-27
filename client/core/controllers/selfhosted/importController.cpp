@@ -10,6 +10,7 @@
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
 #include <QRegularExpressionMatchIterator>
+#include <QStringList>
 #include <QUrl>
 #include <algorithm>
 
@@ -69,6 +70,36 @@ namespace
             return ConfigTypes::OpenVpn;
         }
         return ConfigTypes::Invalid;
+    }
+
+    bool hasRequiredAwgV2Fields(const QJsonObject &config)
+    {
+        const QStringList requiredFields = {
+            configKey::junkPacketCount,
+            configKey::junkPacketMinSize,
+            configKey::junkPacketMaxSize,
+            configKey::initPacketJunkSize,
+            configKey::responsePacketJunkSize,
+            configKey::cookieReplyPacketJunkSize,
+            configKey::transportPacketJunkSize,
+            configKey::initPacketMagicHeader,
+            configKey::responsePacketMagicHeader,
+            configKey::underloadPacketMagicHeader,
+            configKey::transportPacketMagicHeader,
+        };
+
+        return std::all_of(requiredFields.begin(), requiredFields.end(), [&config](const QString &field) {
+            return !config.value(field).toString().trimmed().isEmpty();
+        });
+    }
+
+    void forceAwgV2(QJsonObject &protocolConfig)
+    {
+        protocolConfig[configKey::protocolVersion] = protocols::awg::awgV2;
+
+        QJsonObject clientConfig = QJsonDocument::fromJson(protocolConfig.value(configKey::lastConfig).toString().toUtf8()).object();
+        clientConfig[configKey::isObfuscationEnabled] = true;
+        protocolConfig[configKey::lastConfig] = QString::fromUtf8(QJsonDocument(clientConfig).toJson(QJsonDocument::Compact));
     }
 } // namespace
 
@@ -239,6 +270,78 @@ ImportController::ImportResult ImportController::extractConfigFromData(const QSt
     }
     
     result.errorCode = ErrorCode::ImportInvalidConfigError;
+    return result;
+}
+
+ImportController::ImportResult ImportController::extractOwgConfigFromData(const QString &openVpnData, const QString &awgData,
+                                                                          const QString &configFileName)
+{
+    ImportResult result;
+    result.configFileName = configFileName;
+    result.configType = ConfigTypes::Amnezia;
+
+    QJsonObject openVpnConfig = extractOpenVpnConfig(openVpnData);
+    if (openVpnConfig.isEmpty()) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    ConfigTypes awgType = ConfigTypes::WireGuard;
+    QJsonObject awgConfig = extractWireGuardConfig(awgData, awgType);
+    if (awgConfig.isEmpty() || awgType != ConfigTypes::Awg) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    const auto openVpnContainers = openVpnConfig.value(configKey::containers).toArray();
+    const auto awgContainers = awgConfig.value(configKey::containers).toArray();
+    if (openVpnContainers.isEmpty() || awgContainers.isEmpty()) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    QJsonObject openVpnProtocolConfig = openVpnContainers.first().toObject().value(configKey::openvpn).toObject();
+    QJsonObject awgProtocolConfig = awgContainers.first().toObject().value(configKey::awg).toObject();
+    QJsonObject awgClientConfig = QJsonDocument::fromJson(awgProtocolConfig.value(configKey::lastConfig).toString().toUtf8()).object();
+
+    if (awgProtocolConfig.value(configKey::protocolVersion).toString() != protocols::awg::awgV2 ||
+        !hasRequiredAwgV2Fields(awgClientConfig)) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    forceAwgV2(awgProtocolConfig);
+
+    QJsonObject owgProtocolConfig;
+    owgProtocolConfig[configKey::openvpn] = openVpnProtocolConfig;
+    owgProtocolConfig[configKey::awg] = awgProtocolConfig;
+
+    QJsonObject owgContainer;
+    owgContainer[configKey::container] = QString(configKey::amneziaOwg);
+    owgContainer[configKey::owg] = owgProtocolConfig;
+
+    QJsonArray containers;
+    containers.append(owgContainer);
+
+    QJsonObject config;
+    config[configKey::containers] = containers;
+    config[configKey::defaultContainer] = QString(configKey::amneziaOwg);
+    config[configKey::description] = m_appSettingsRepository->nextAvailableServerName();
+    config[configKey::hostName] = openVpnConfig.value(configKey::hostName).toString();
+
+    if (openVpnConfig.contains(configKey::dns1)) {
+        config[configKey::dns1] = openVpnConfig.value(configKey::dns1);
+    } else if (awgConfig.contains(configKey::dns1)) {
+        config[configKey::dns1] = awgConfig.value(configKey::dns1);
+    }
+    if (openVpnConfig.contains(configKey::dns2)) {
+        config[configKey::dns2] = openVpnConfig.value(configKey::dns2);
+    } else if (awgConfig.contains(configKey::dns2)) {
+        config[configKey::dns2] = awgConfig.value(configKey::dns2);
+    }
+
+    checkForMaliciousStrings(config, result.maliciousWarningText);
+    result.config = config;
     return result;
 }
 
@@ -714,10 +817,20 @@ void ImportController::checkForMaliciousStrings(const QJsonObject &serverConfig,
     for (const QJsonValue &container : containers) {
         auto containerConfig = container.toObject();
         auto containerName = containerConfig[configKey::container].toString();
-        if (containerName == ContainerUtils::containerToString(DockerContainer::OpenVpn)) {
+        if (containerName == ContainerUtils::containerToString(DockerContainer::OpenVpn) ||
+            containerName == ContainerUtils::containerToString(DockerContainer::OWG)) {
 
-            QString protocolConfig =
-                    containerConfig[ProtocolUtils::protoToString(Proto::OpenVpn)].toObject()[configKey::lastConfig].toString();
+            QString protocolConfig;
+            if (containerName == ContainerUtils::containerToString(DockerContainer::OWG)) {
+                protocolConfig = containerConfig[configKey::owg].toObject()
+                                         .value(configKey::openvpn)
+                                         .toObject()
+                                         .value(configKey::lastConfig)
+                                         .toString();
+            } else {
+                protocolConfig =
+                        containerConfig[ProtocolUtils::protoToString(Proto::OpenVpn)].toObject()[configKey::lastConfig].toString();
+            }
             QString protocolConfigJson = QJsonDocument::fromJson(protocolConfig.toUtf8()).object()[configKey::config].toString();
 
             // https://github.com/OpenVPN/openvpn/blob/master/doc/man-sections/script-options.rst
@@ -756,6 +869,27 @@ void ImportController::processAmneziaConfig(QJsonObject &config) const
     for (auto i = 0; i < containers.size(); i++) {
         auto container = containers.at(i).toObject();
         auto dockerContainer = ContainerUtils::containerFromString(container.value(configKey::container).toString());
+        if (dockerContainer == DockerContainer::OWG) {
+            auto owgConfig = container.value(configKey::owg).toObject();
+            auto awgContainerConfig = owgConfig.value(configKey::awg).toObject();
+            auto protocolConfig = awgContainerConfig.value(configKey::lastConfig).toString();
+            if (protocolConfig.isEmpty()) {
+                return;
+            }
+
+            QJsonObject jsonConfig = QJsonDocument::fromJson(protocolConfig.toUtf8()).object();
+            jsonConfig[configKey::mtu] = protocols::awg::defaultMtu;
+            jsonConfig[configKey::isObfuscationEnabled] = true;
+
+            awgContainerConfig[configKey::protocolVersion] = protocols::awg::awgV2;
+            awgContainerConfig[configKey::lastConfig] = QString(QJsonDocument(jsonConfig).toJson());
+
+            owgConfig[configKey::awg] = awgContainerConfig;
+            container[configKey::owg] = owgConfig;
+            containers.replace(i, container);
+            config.insert(configKey::containers, containers);
+            continue;
+        }
         if (ContainerUtils::isAwgContainer(dockerContainer) || dockerContainer == DockerContainer::WireGuard) {
             auto containerConfig = container.value(ContainerUtils::containerTypeToProtocolString(dockerContainer)).toObject();
             auto protocolConfig = containerConfig.value(configKey::lastConfig).toString();

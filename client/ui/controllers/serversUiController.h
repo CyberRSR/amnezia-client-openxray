@@ -59,6 +59,7 @@ public slots:
 
     void setDefaultContainer(const QString &serverId, int containerIndex);
     void setDefaultContainerAtIndex(int index, int containerIndex);
+    bool updateProcessedContainerConfig(int containerIndex, const QJsonObject &containerConfig);
 
     void toggleAmneziaDns(bool enabled);
     void onDefaultServerChanged(const QString &defaultServerId);

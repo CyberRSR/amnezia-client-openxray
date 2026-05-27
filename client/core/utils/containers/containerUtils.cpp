@@ -25,6 +25,8 @@ QString ContainerUtils::containerToString(DockerContainer c)
         return "amnezia-awg";
     if (c == DockerContainer::Awg2)
         return "amnezia-awg2";
+    if (c == DockerContainer::OWG)
+        return configKey::amneziaOwg;
     QMetaEnum metaEnum = QMetaEnum::fromType<DockerContainer>();
     QString containerKey = metaEnum.valueToKey(static_cast<int>(c));
 
@@ -41,6 +43,8 @@ QString ContainerUtils::containerTypeToString(DockerContainer c)
         return "awg";
     if (c == DockerContainer::Awg2)
         return "awg";
+    if (c == DockerContainer::OWG)
+        return "owg";
     QMetaEnum metaEnum = QMetaEnum::fromType<DockerContainer>();
     QString containerKey = metaEnum.valueToKey(static_cast<int>(c));
 
@@ -65,6 +69,7 @@ QMap<DockerContainer, QString> ContainerUtils::containerHumanNames()
              { DockerContainer::WireGuard, "WireGuard" },
              { DockerContainer::Awg, "AmneziaWG" },
              { DockerContainer::Awg2, "AmneziaWG" },
+             { DockerContainer::OWG, "OWG" },
              { DockerContainer::Xray, "XRay" },
              { DockerContainer::Ipsec, QObject::tr("IPsec") },
              { DockerContainer::SSXray, "Shadowsocks"},
@@ -92,6 +97,8 @@ QMap<DockerContainer, QString> ContainerUtils::containerDescriptions()
              { DockerContainer::Awg2,
                QObject::tr("AmneziaWG is a special protocol from Amnezia based on WireGuard. "
                            "It provides high connection speed and ensures stable operation even in the most challenging network conditions.") },
+             { DockerContainer::OWG,
+               QObject::tr("OWG combines OpenVPN and AmneziaWG v2 into a chained Android VPN profile.") },
              { DockerContainer::Xray,
                QObject::tr("XRay with REALITY masks VPN traffic as web traffic and protects against active probing. "
                            "It is highly resistant to detection and offers high speed.") },
@@ -149,6 +156,9 @@ QMap<DockerContainer, QString> ContainerUtils::containerDetailedDescriptions()
                       "* Minimal settings required\n"
                       "* Undetectable by traffic analysis systems (DPI)\n"
                       "* Operates over UDP protocol") },
+        { DockerContainer::OWG,
+          QObject::tr("OWG creates a chained connection: device -> OpenVPN server -> AmneziaWG v2 server -> internet. "
+                      "It is intended for Android profiles where the AmneziaWG endpoint must be reached through an OpenVPN underlay.") },
         { DockerContainer::Xray,
           QObject::tr("REALITY is an innovative protocol developed by the creators of XRay, designed specifically to combat high levels of internet censorship. "
                       "REALITY identifies censorship systems during the TLS handshake, "
@@ -203,6 +213,7 @@ Proto ContainerUtils::defaultProtocol(DockerContainer c)
     case DockerContainer::None: return Proto::Unknown;
     case DockerContainer::OpenVpn: return Proto::OpenVpn;
     case DockerContainer::WireGuard: return Proto::WireGuard;
+    case DockerContainer::OWG: return Proto::OWG;
     case DockerContainer::Awg2: return Proto::Awg;
     case DockerContainer::Awg: return Proto::Awg;
     case DockerContainer::Xray: return Proto::Xray;
@@ -231,7 +242,7 @@ QString ContainerUtils::containerTypeToProtocolString(DockerContainer c)
 bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
 {
 #ifdef Q_OS_WINDOWS
-    return true;
+    return c != DockerContainer::OWG;
 
 #elif defined(Q_OS_IOS)
     // Standard iOS build (without Network Extension limitations)
@@ -240,6 +251,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
     case DockerContainer::OpenVpn: return true;
     case DockerContainer::Awg2: return true;
     case DockerContainer::Awg: return true;
+    case DockerContainer::OWG: return false;
     case DockerContainer::Xray: return true;
     case DockerContainer::SSXray: return true;
     case DockerContainer::MtProxy: return true;
@@ -255,6 +267,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
     case DockerContainer::WireGuard: return true;
     case DockerContainer::Awg2: return true;
     case DockerContainer::Awg: return true;
+    case DockerContainer::OWG: return false;
     case DockerContainer::Xray: return true;
     case DockerContainer::SSXray: return true;
     case DockerContainer::MtProxy: return true;
@@ -264,6 +277,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
     }
 #elif defined(Q_OS_MAC)
     switch (c) {
+    case DockerContainer::OWG: return false;
     case DockerContainer::WireGuard: return true;
     case DockerContainer::Ipsec: return false;
     default: return true;
@@ -275,6 +289,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
     case DockerContainer::OpenVpn: return true;
     case DockerContainer::Awg2: return true;
     case DockerContainer::Awg: return true;
+    case DockerContainer::OWG: return true;
     case DockerContainer::Xray: return true;
     case DockerContainer::SSXray: return true;
     case DockerContainer::MtProxy: return true;
@@ -284,6 +299,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
 
 #elif defined(Q_OS_LINUX)
     switch (c) {
+    case DockerContainer::OWG: return false;
     case DockerContainer::Ipsec: return false;
     default: return true;
     }
@@ -368,6 +384,7 @@ int ContainerUtils::installPageOrder(DockerContainer container)
     case DockerContainer::OpenVpn: return 4;
     case DockerContainer::WireGuard: return 2;
     case DockerContainer::Awg2: return 1;
+    case DockerContainer::OWG: return 5;
     case DockerContainer::Xray: return 3;
     case DockerContainer::Ipsec: return 7;
     case DockerContainer::SSXray: return 8;

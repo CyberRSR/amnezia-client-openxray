@@ -21,6 +21,7 @@ public:
         // Protocol type check roles
         IsWireGuardRole,
         IsAwgRole,
+        IsOwgRole,
         IsOpenVpnRole,
         IsXrayRole,
         IsSftpRole,

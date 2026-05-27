@@ -135,6 +135,42 @@ void ServersController::setDefaultContainer(const QString &serverId, DockerConta
     }
 }
 
+bool ServersController::updateContainerConfig(const QString &serverId, DockerContainer container, const ContainerConfig &containerConfig)
+{
+    const serverConfigUtils::ConfigType kind = m_serversRepository->serverKind(serverId);
+    switch (kind) {
+    case serverConfigUtils::ConfigType::SelfHostedAdmin: {
+        auto cfg = m_serversRepository->selfHostedAdminConfig(serverId);
+        if (!cfg.has_value()) return false;
+        cfg->containers[container] = containerConfig;
+        m_serversRepository->editServer(serverId, cfg->toJson(), kind);
+        return true;
+    }
+    case serverConfigUtils::ConfigType::SelfHostedUser: {
+        auto cfg = m_serversRepository->selfHostedUserConfig(serverId);
+        if (!cfg.has_value()) return false;
+        cfg->containers[container] = containerConfig;
+        m_serversRepository->editServer(serverId, cfg->toJson(), kind);
+        return true;
+    }
+    case serverConfigUtils::ConfigType::Native: {
+        auto cfg = m_serversRepository->nativeConfig(serverId);
+        if (!cfg.has_value()) return false;
+        cfg->containers[container] = containerConfig;
+        m_serversRepository->editServer(serverId, cfg->toJson(), kind);
+        return true;
+    }
+    case serverConfigUtils::ConfigType::AmneziaPremiumV2:
+    case serverConfigUtils::ConfigType::AmneziaFreeV3:
+    case serverConfigUtils::ConfigType::ExternalPremium:
+    case serverConfigUtils::ConfigType::AmneziaPremiumV1:
+    case serverConfigUtils::ConfigType::AmneziaFreeV2:
+    case serverConfigUtils::ConfigType::Invalid:
+    default:
+        return false;
+    }
+}
+
 QVector<ServerDescription> ServersController::buildServerDescriptions(bool isAmneziaDnsEnabled) const
 {
     QVector<ServerDescription> out;

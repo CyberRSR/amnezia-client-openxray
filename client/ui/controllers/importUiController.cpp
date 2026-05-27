@@ -62,6 +62,35 @@ bool ImportUiController::extractConfigFromFile(const QString &fileName)
     return true;
 }
 
+bool ImportUiController::extractOwgConfigFromFiles(const QString &openVpnFileName, const QString &awgFileName)
+{
+    QString openVpnData;
+    QString awgData;
+    if (!SystemController::readFile(openVpnFileName, openVpnData) || !SystemController::readFile(awgFileName, awgData)) {
+        emit importErrorOccurred(ErrorCode::ImportOpenConfigError, false);
+        return false;
+    }
+
+    const QString configFileName = QFileInfo(QFile(openVpnFileName).fileName()).completeBaseName()
+            + QStringLiteral("+")
+            + QFileInfo(QFile(awgFileName).fileName()).completeBaseName()
+            + QStringLiteral(".owg");
+
+    auto result = m_importController->extractOwgConfigFromData(openVpnData, awgData, configFileName);
+    if (result.errorCode != ErrorCode::NoError) {
+        emit importErrorOccurred(result.errorCode, false);
+        return false;
+    }
+
+    m_config = result.config;
+    m_configFileName = result.configFileName;
+    m_maliciousWarningText = result.maliciousWarningText;
+    m_isNativeWireGuardConfig = false;
+
+    emit importConfigChanged();
+    return true;
+}
+
 bool ImportUiController::extractConfigFromData(QString data)
 {
     auto result = m_importController->extractConfigFromData(data);

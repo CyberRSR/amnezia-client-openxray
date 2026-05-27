@@ -31,6 +31,8 @@ import org.amnezia.vpn.protocol.StatusStep
 import org.amnezia.vpn.protocol.StatusStepState
 import org.amnezia.vpn.protocol.Statistics
 import org.amnezia.vpn.protocol.openvpn.OpenVpn
+import org.amnezia.vpn.protocol.openvpn.OpenVpnUnderlaySettings
+import org.amnezia.vpn.protocol.openvpn.OpenVpnUserspaceTunnel
 import org.amnezia.vpn.util.Log
 import org.amnezia.vpn.util.net.activeTransportKey
 import org.amnezia.vpn.util.net.describeActiveNetwork

@@ -55,6 +55,7 @@ public:
     };
 
     ImportResult extractConfigFromData(const QString &data, const QString &configFileName = "");
+    ImportResult extractOwgConfigFromData(const QString &openVpnData, const QString &awgData, const QString &configFileName = "");
     ImportResult extractConfigFromQr(const QByteArray &data);
 
     void startDecodingQr();

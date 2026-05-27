@@ -269,6 +269,7 @@ PageType {
         selfHostVpn,
         backupRestore,
         oxrayFiles,
+        owgFiles,
         fileOpen,
         qrScan,
         restorePurchases,
@@ -345,6 +346,31 @@ PageType {
             }
 
             if (ImportController.extractOxrayConfigFromFiles(openVpnFileName, xrayFileName)) {
+                PageController.goToPage(PageEnum.PageSetupWizardViewConfig)
+            }
+        }
+    }
+
+    QtObject {
+        id: owgFiles
+
+        property string title: qsTr("OWG (OpenVPN + AmneziaWG v2)")
+        property string description: qsTr("Create one OWG profile from an .ovpn file and an AmneziaWG v2 config")
+        property string imageSource: "qrc:/images/controls/file-cog-2.svg"
+        property bool isVisible: Qt.platform.os === "android"
+        property var handler: function() {
+            var openVpnFileName = SystemController.getFileName(qsTr("Open OpenVPN config"), qsTr("OpenVPN config (*.ovpn)"))
+            if (openVpnFileName === "") {
+                return
+            }
+
+            var awgFileName = SystemController.getFileName(qsTr("Open AmneziaWG v2 config"),
+                                                           qsTr("AmneziaWG config (*.conf)"))
+            if (awgFileName === "") {
+                return
+            }
+
+            if (ImportController.extractOwgConfigFromFiles(openVpnFileName, awgFileName)) {
                 PageController.goToPage(PageEnum.PageSetupWizardViewConfig)
             }
         }

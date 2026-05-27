@@ -42,6 +42,7 @@ public:
 
     // Container management
     void setDefaultContainer(const QString &serverId, DockerContainer container);
+    bool updateContainerConfig(const QString &serverId, DockerContainer container, const ContainerConfig &containerConfig);
 
     // Getters
     QVector<ServerDescription> buildServerDescriptions(bool isAmneziaDnsEnabled) const;
