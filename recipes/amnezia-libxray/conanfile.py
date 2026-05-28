@@ -57,5 +57,5 @@ class AmneziaLibxray(ConanFile):
 
     def package_info(self):
         self.cpp_info.set_property("cmake_extra_variables", {
-            "AMNEZIA_LIBXRAY_PATH": os.path.join(self.package_folder, "aar", "libxray.aar"),
+            "AMNEZIA_LIBXRAY_PATH": os.path.join(self.package_folder, "aar", "libxray.aar").replace(os.sep, "/"),
         })

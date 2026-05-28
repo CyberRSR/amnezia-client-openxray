@@ -26,8 +26,6 @@ import org.amnezia.vpn.protocol.wireguard.WireguardConfig
 import org.amnezia.vpn.protocol.openvpn.OpenVpnUdpRelayHandle
 import org.amnezia.vpn.protocol.openvpn.OpenVpnUserspaceTunnel
 import org.amnezia.vpn.util.Log
-import org.amnezia.vpn.util.net.InetNetwork
-import org.amnezia.vpn.util.net.parseInetAddress
 import org.amnezia.vpn.util.optStringOrNull
 import org.json.JSONObject
 
@@ -224,7 +222,6 @@ private class RelayedAwg(
             setUseProtocolExtension(true)
             configExtensionParameters(configData)
             configWireguard(config, configData)
-            excludeRoute(InetNetwork(parseInetAddress(relayHost)))
             configSplitTunneling(config)
             configAppSplitTunneling(config)
         }

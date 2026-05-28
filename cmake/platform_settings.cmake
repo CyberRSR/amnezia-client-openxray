@@ -21,7 +21,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
         "-c=tools.android:cmake_legacy_toolchain=false"
         "-c=tools.build:sharedlinkflags=['-Wl,-z,max-page-size=16384']"
         "-c=tools.build:exelinkflags=['-Wl,-z,max-page-size=16384']"
-        "-o=openssl/*:shared=True")
+        "-o=openssl/*:shared=False"
+        "-o=openssl/*:no_fips=True")
     set(CMAKE_ANDROID_STL_TYPE "c++_shared" CACHE STRING "")
 endif()
 

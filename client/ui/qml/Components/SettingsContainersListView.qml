@@ -33,7 +33,7 @@ ListViewType {
 
                     if (isVpnContainer) {
                         // var isThirdPartyConfig = root.model.data(index, ContainersModel.IsThirdPartyConfigRole)
-                        if (isThirdPartyConfig) {
+                        if (isThirdPartyConfig && containerString !== "amnezia-owg") {
                             InstallController.updateProtocols(ServersUiController.getServerId(ServersUiController.processedServerIndex), containerIndex)
                             PageController.goToPage(PageEnum.PageProtocolRaw)
                             return
