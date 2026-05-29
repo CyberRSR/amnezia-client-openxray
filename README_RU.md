@@ -33,6 +33,14 @@
 - Поддерживает платформы: Windows, macOS, Linux, Android, iOS.
 - Поддержка конфигурации протокола AmneziaWG на [бета-прошивке Keenetic](https://docs.keenetic.com/ua/air/kn-1611/en/6319-latest-development-release.html#UUID-186c4108-5afd-c10b-f38a-cdff6c17fab3_section-idm33192196168192-improved).
 
+## Дополнения ветки OWG
+
+- Android-only протокол OWG: сначала запускается OpenVPN, затем AmneziaWG v2 работает через этот промежуточный туннель.
+- Импорт OWG принимает два файла: OpenVPN `.ovpn` и AmneziaWG v2 `.conf`. AWG v1/v1.5 для OWG отклоняются.
+- В настройках OWG отображаются настройки OpenVPN и runtime-поля AmneziaWG v2.
+- Сохранённые VPN-профили можно экспортировать в один файл Amnezia `.vpn` или QR-код из настроек протокола. Экспорт включает только выбранное подключение и не включает API-подписки, admin-доступ, SSH-учётные данные, пароли и соседние контейнеры.
+- Релиз `v0.5` — debug Android arm64 сборка для тестирования этой OWG ветки (`org.amnezia.vpn.debugx`).
+
 ## Ссылки
 
 - [https://amnezia.org](https://amnezia.org) - Веб-сайт проекта | [Альтернативная ссылка (зеркало)](https://storage.googleapis.com/kldscp/amnezia.org)

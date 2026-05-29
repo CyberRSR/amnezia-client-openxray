@@ -18,6 +18,44 @@ PageType {
     id: root
 
     property bool isClearCacheVisible: ServersUiController.isProcessedServerHasWriteAccess() && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
+    property bool isStoredConnectionExportVisible: !ServersModel.isServerFromApi(ServersUiController.processedServerIndex)
+                                                   && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
+
+    Connections {
+        target: ExportController
+
+        function onExportErrorOccurred(error) {
+            PageController.showBusyIndicator(false)
+            PageController.showErrorMessage(error)
+        }
+    }
+
+    function exportStoredConnection() {
+        var serverId = ServersUiController.getServerId(ServersUiController.processedServerIndex)
+        var containerIndex = ServersUiController.processedContainerIndex
+        var serverName = ServersModel.getProcessedServerData("name")
+        if (!serverName) {
+            serverName = ServersModel.getProcessedServerData("hostName")
+        }
+        if (!serverName) {
+            serverName = qsTr("server")
+        }
+
+        PageController.showBusyIndicator(true)
+        ExportController.generateStoredConnectionConfig(serverId, containerIndex)
+        PageController.showBusyIndicator(false)
+
+        if (ExportController.config === "") {
+            return
+        }
+
+        PageController.goToShareConnectionPage(
+                    qsTr("Connection to ") + serverName,
+                    qsTr("File with connection settings to ") + serverName,
+                    qsTr("Save AmneziaVPN config"),
+                    ".vpn",
+                    "amnezia_saved_connection")
+    }
 
     BackButtonType {
         id: backButton
@@ -123,6 +161,31 @@ PageType {
         footer: ColumnLayout {
 
             width: listView.width
+
+            LabelWithButtonType {
+                id: exportStoredConnectionButton
+
+                Layout.fillWidth: true
+
+                visible: root.isStoredConnectionExportVisible
+
+                text: qsTr("Export saved connection")
+                rightImageSource: "qrc:/images/controls/chevron-right.svg"
+
+                clickedFunction: function() {
+                    root.exportStoredConnection()
+                }
+
+                MouseArea {
+                    anchors.fill: exportStoredConnectionButton
+                    cursorShape: Qt.PointingHandCursor
+                    enabled: false
+                }
+            }
+
+            DividerType {
+                visible: root.isStoredConnectionExportVisible
+            }
 
             LabelWithButtonType {
                 id: clearCacheButton

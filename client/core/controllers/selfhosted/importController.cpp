@@ -878,7 +878,14 @@ void ImportController::processAmneziaConfig(QJsonObject &config) const
             }
 
             QJsonObject jsonConfig = QJsonDocument::fromJson(protocolConfig.toUtf8()).object();
-            jsonConfig[configKey::mtu] = protocols::awg::defaultMtu;
+            if (awgContainerConfig.value(configKey::protocolVersion).toString() != protocols::awg::awgV2 ||
+                !hasRequiredAwgV2Fields(jsonConfig)) {
+                config = {};
+                return;
+            }
+            if (jsonConfig.value(configKey::mtu).toString().isEmpty()) {
+                jsonConfig[configKey::mtu] = protocols::awg::defaultMtu;
+            }
             jsonConfig[configKey::isObfuscationEnabled] = true;
 
             awgContainerConfig[configKey::protocolVersion] = protocols::awg::awgV2;

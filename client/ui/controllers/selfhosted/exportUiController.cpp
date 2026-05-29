@@ -25,6 +25,13 @@ void ExportUiController::generateConnectionConfig(const QString &serverId, int c
     applyExportResult(result);
 }
 
+void ExportUiController::generateStoredConnectionConfig(const QString &serverId, int containerIndex)
+{
+    clearPreviousConfig();
+    auto result = m_exportController->generateStoredConnectionConfig(serverId, containerIndex);
+    applyExportResult(result);
+}
+
 void ExportUiController::generateOpenVpnConfig(const QString &serverId, const QString &clientName)
 {
     clearPreviousConfig();

@@ -36,6 +36,14 @@
 - Windows, MacOS, Linux, Android, iOS releases.
 - Support for AmneziaWG protocol configuration on [Keenetic beta firmware](https://docs.keenetic.com/ua/air/kn-1611/en/6319-latest-development-release.html#UUID-186c4108-5afd-c10b-f38a-cdff6c17fab3_section-idm33192196168192-improved).
 
+## OWG branch additions
+
+- Android-only OWG protocol: OpenVPN is started first, then AmneziaWG v2 is chained through it.
+- OWG import accepts two files: an OpenVPN `.ovpn` file and an AmneziaWG v2 `.conf` file. AWG v1/v1.5 files are rejected for OWG.
+- OWG settings expose both OpenVPN settings and AmneziaWG v2 runtime fields.
+- Saved VPN profiles can be exported as one Amnezia `.vpn` file or QR code from protocol settings. The export includes only the selected connection profile and excludes API subscriptions, admin access, SSH credentials, passwords, and unrelated containers.
+- Release `v0.5` is a debug Android arm64 build intended for testing this OWG branch (`org.amnezia.vpn.debugx`).
+
 ## Links
 
 - [https://amnezia.org](https://amnezia.org) - Project website | [Alternative link (mirror)](https://storage.googleapis.com/kldscp/amnezia.org)

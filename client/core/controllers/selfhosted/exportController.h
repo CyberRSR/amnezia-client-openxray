@@ -39,6 +39,7 @@ public:
 
     ExportResult generateFullAccessConfig(const QString &serverId);
     ExportResult generateConnectionConfig(const QString &serverId, int containerIndex, const QString &clientName);
+    ExportResult generateStoredConnectionConfig(const QString &serverId, int containerIndex);
     ExportResult generateOpenVpnConfig(const QString &serverId, const QString &clientName);
     ExportResult generateWireGuardConfig(const QString &serverId, const QString &clientName);
     ExportResult generateAwgConfig(const QString &serverId, int containerIndex, const QString &clientName);

@@ -2,20 +2,103 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QStringList>
+#include <algorithm>
 
 #include "core/configurators/configuratorBase.h"
 #include "core/utils/selfhosted/sshSession.h"
 #include "core/utils/qrCodeUtils.h"
 #include "core/utils/serialization/serialization.h"
 #include "core/utils/protocolEnum.h"
+#include "core/utils/serverConfigUtils.h"
 #include "core/protocols/protocolUtils.h"
 #include "core/utils/constants/configKeys.h"
 #include "core/utils/constants/protocolConstants.h"
 #include "core/models/selfhosted/selfHostedAdminServerConfig.h"
+#include "core/models/selfhosted/selfHostedUserServerConfig.h"
+#include "core/models/selfhosted/nativeServerConfig.h"
 #include "core/models/containerConfig.h"
 #include "core/models/protocolConfig.h"
 
 using namespace amnezia;
+
+namespace
+{
+bool hasRequiredAwgV2Fields(const QJsonObject &config)
+{
+    const QStringList requiredFields = {
+        configKey::junkPacketCount,
+        configKey::junkPacketMinSize,
+        configKey::junkPacketMaxSize,
+        configKey::initPacketJunkSize,
+        configKey::responsePacketJunkSize,
+        configKey::cookieReplyPacketJunkSize,
+        configKey::transportPacketJunkSize,
+        configKey::initPacketMagicHeader,
+        configKey::responsePacketMagicHeader,
+        configKey::underloadPacketMagicHeader,
+        configKey::transportPacketMagicHeader,
+    };
+
+    return std::all_of(requiredFields.begin(), requiredFields.end(), [&config](const QString &field) {
+        return !config.value(field).toString().trimmed().isEmpty();
+    });
+}
+
+bool isStoredContainerExportable(const ContainerConfig &containerConfig)
+{
+    if (containerConfig.container == DockerContainer::None) {
+        return false;
+    }
+    if (!ContainerUtils::isShareable(containerConfig.container)) {
+        return false;
+    }
+    if (ContainerUtils::containerService(containerConfig.container) != ServiceType::Vpn) {
+        return false;
+    }
+    if (!containerConfig.protocolConfig.hasClientConfig()) {
+        return false;
+    }
+
+    if (containerConfig.container == DockerContainer::OWG) {
+        const OwgProtocolConfig *owg = containerConfig.getOwgProtocolConfig();
+        if (!owg || !owg->awgConfig.clientConfig.has_value()) {
+            return false;
+        }
+        if (owg->awgConfig.serverConfig.protocolVersion != protocols::awg::awgV2) {
+            return false;
+        }
+        if (!hasRequiredAwgV2Fields(owg->awgConfig.clientConfig->toJson())) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+SelfHostedUserServerConfig buildSingleContainerUserConfig(const QString &description,
+                                                          const QString &displayName,
+                                                          const QString &hostName,
+                                                          const QString &dns1,
+                                                          const QString &dns2,
+                                                          DockerContainer container,
+                                                          const ContainerConfig &containerConfig)
+{
+    SelfHostedUserServerConfig exportConfig;
+    exportConfig.description = description;
+    exportConfig.displayName = displayName;
+    exportConfig.hostName = hostName;
+    exportConfig.defaultContainer = container;
+    exportConfig.dns1 = dns1;
+    exportConfig.dns2 = dns2;
+
+    ContainerConfig storedContainerConfig = containerConfig;
+    storedContainerConfig.container = container;
+    exportConfig.containers.insert(container, storedContainerConfig);
+
+    return exportConfig;
+}
+}
 
 ExportController::ExportController(SecureServersRepository* serversRepository,
                                    SecureAppSettingsRepository* appSettingsRepository,
@@ -106,6 +189,89 @@ ExportController::ExportResult ExportController::generateConnectionConfig(const 
     QByteArray compressedConfig = QJsonDocument(serverJson).toJson();
     compressedConfig = qCompress(compressedConfig, 8);
     result.config = generateVpnUrl(compressedConfig);
+    result.qrCodes = generateQrCodesFromConfig(compressedConfig);
+
+    return result;
+}
+
+ExportController::ExportResult ExportController::generateStoredConnectionConfig(const QString &serverId, int containerIndex)
+{
+    ExportResult result;
+
+    DockerContainer container = static_cast<DockerContainer>(containerIndex);
+    if (container == DockerContainer::None) {
+        result.errorCode = ErrorCode::InternalError;
+        return result;
+    }
+
+    SelfHostedUserServerConfig exportConfig;
+    const serverConfigUtils::ConfigType kind = m_serversRepository->serverKind(serverId);
+
+    switch (kind) {
+    case serverConfigUtils::SelfHostedAdmin: {
+        auto adminConfig = m_serversRepository->selfHostedAdminConfig(serverId);
+        if (!adminConfig.has_value() || !adminConfig->containers.contains(container)) {
+            result.errorCode = ErrorCode::InternalError;
+            return result;
+        }
+
+        const ContainerConfig containerConfig = adminConfig->containerConfig(container);
+        if (!isStoredContainerExportable(containerConfig)) {
+            result.errorCode = ErrorCode::InternalError;
+            return result;
+        }
+
+        exportConfig = buildSingleContainerUserConfig(adminConfig->description, adminConfig->displayName,
+                                                      adminConfig->hostName, adminConfig->dns1, adminConfig->dns2,
+                                                      container, containerConfig);
+        break;
+    }
+    case serverConfigUtils::SelfHostedUser: {
+        auto userConfig = m_serversRepository->selfHostedUserConfig(serverId);
+        if (!userConfig.has_value() || !userConfig->containers.contains(container)) {
+            result.errorCode = ErrorCode::InternalError;
+            return result;
+        }
+
+        const ContainerConfig containerConfig = userConfig->containerConfig(container);
+        if (!isStoredContainerExportable(containerConfig)) {
+            result.errorCode = ErrorCode::InternalError;
+            return result;
+        }
+
+        exportConfig = buildSingleContainerUserConfig(userConfig->description, userConfig->displayName,
+                                                      userConfig->hostName, userConfig->dns1, userConfig->dns2,
+                                                      container, containerConfig);
+        break;
+    }
+    case serverConfigUtils::Native: {
+        auto nativeConfig = m_serversRepository->nativeConfig(serverId);
+        if (!nativeConfig.has_value() || !nativeConfig->containers.contains(container)) {
+            result.errorCode = ErrorCode::InternalError;
+            return result;
+        }
+
+        const ContainerConfig containerConfig = nativeConfig->containerConfig(container);
+        if (!isStoredContainerExportable(containerConfig)) {
+            result.errorCode = ErrorCode::InternalError;
+            return result;
+        }
+
+        exportConfig = buildSingleContainerUserConfig(nativeConfig->description, nativeConfig->displayName,
+                                                      nativeConfig->hostName, nativeConfig->dns1, nativeConfig->dns2,
+                                                      container, containerConfig);
+        break;
+    }
+    default:
+        result.errorCode = ErrorCode::InternalError;
+        return result;
+    }
+
+    QJsonObject serverJson = exportConfig.toJson();
+    QByteArray compressedConfig = QJsonDocument(serverJson).toJson();
+    compressedConfig = qCompress(compressedConfig, 8);
+    result.config = generateVpnUrl(compressedConfig);
+    result.nativeConfigString = exportConfig.containerConfig(container).protocolConfig.nativeConfig();
     result.qrCodes = generateQrCodesFromConfig(compressedConfig);
 
     return result;
