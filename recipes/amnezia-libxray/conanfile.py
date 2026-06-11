@@ -48,11 +48,27 @@ class AmneziaLibxray(ConanFile):
         build_stat = os.stat(build_path)
         os.chmod(build_path, build_stat.st_mode | stat.S_IEXEC)
 
+    @property
+    def _prebuilt_aar_path(self):
+        return os.getenv("AMNEZIA_LIBXRAY_AAR")
+
     def build(self):
+        if self._prebuilt_aar_path:
+            if not os.path.isfile(self._prebuilt_aar_path):
+                raise ConanInvalidConfiguration(
+                    f"AMNEZIA_LIBXRAY_AAR does not point to an existing file: {self._prebuilt_aar_path}"
+                )
+            return
+
         self._patch_sources()
         self.run("./build.sh android")
 
     def package(self):
+        if self._prebuilt_aar_path:
+            copy(self, os.path.basename(self._prebuilt_aar_path), src=os.path.dirname(self._prebuilt_aar_path),
+                 dst=os.path.join(self.package_folder, "aar"))
+            return
+
         copy(self, "libxray.aar", src=self.build_folder, dst=os.path.join(self.package_folder, "aar"))
 
     def package_info(self):

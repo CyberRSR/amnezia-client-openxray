@@ -1,6 +1,6 @@
 from conan import ConanFile
 from conan.tools.cmake import cmake_layout, CMake, CMakeToolchain
-from conan.tools.files import copy, replace_in_file
+from conan.tools.files import copy, replace_in_file, save
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.scm import Git
 
@@ -101,13 +101,66 @@ class AwgAndroid(ConanFile):
                 'shasum -a 256 -c'
             )
 
+    def _abi_name(self):
+        return {
+            "armv7": "armeabi-v7a",
+            "armv8": "arm64-v8a",
+            "x86": "x86",
+            "x86_64": "x86_64",
+        }.get(str(self.settings.arch), str(self.settings.arch))
+
+    def _prebuilt_dir(self):
+        root = os.getenv("AMNEZIA_AWG_ANDROID_PREBUILT_DIR")
+        if not root:
+            return None
+        abi_dir = os.path.join(root, self._abi_name())
+        if os.path.isfile(os.path.join(abi_dir, "libwg-go.so")):
+            return abi_dir
+        if os.path.isfile(os.path.join(root, "libwg-go.so")):
+            return root
+        raise ConanInvalidConfiguration(
+            f"AMNEZIA_AWG_ANDROID_PREBUILT_DIR does not contain {self._abi_name()} AWG libraries"
+        )
+
     def build(self):
+        if self._prebuilt_dir():
+            return
         self._patch_sources()
         cmake = CMake(self)
         cmake.configure(build_script_folder=os.path.join(self.source_folder, "tunnel", "tools"))
         cmake.build(target=["libwg-go.so", "libwg.so", "libwg-quick.so"])
 
     def package(self):
+        prebuilt_dir = self._prebuilt_dir()
+        if prebuilt_dir:
+            copy(self, "libwg-go.so", src=prebuilt_dir, dst=os.path.join(self.package_folder, "lib"))
+            copy(self, "libwg.so", src=prebuilt_dir, dst=os.path.join(self.package_folder, "bin"))
+            copy(self, "libwg-quick.so", src=prebuilt_dir, dst=os.path.join(self.package_folder, "bin"))
+            save(self, os.path.join(self.package_folder, "include", "libwg-go.h"), """
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct { const char *p; ptrdiff_t n; } GoString;
+typedef int32_t GoInt32;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern GoInt32 awgTurnOn(GoString interfaceName, GoInt32 tunFd, GoString settings);
+extern void awgTurnOff(GoInt32 tunnelHandle);
+extern GoInt32 awgGetSocketV4(GoInt32 tunnelHandle);
+extern GoInt32 awgGetSocketV6(GoInt32 tunnelHandle);
+extern char* awgGetConfig(GoInt32 tunnelHandle);
+extern char* awgVersion(void);
+
+#ifdef __cplusplus
+}
+#endif
+""".lstrip())
+            return
+
         copy(self, "libwg-go.h", src=os.path.join(self.build_folder, "out"), dst=os.path.join(self.package_folder, "include"))
         copy(self, "libwg-go.so", src=os.path.join(self.build_folder, "out"), dst=os.path.join(self.package_folder, "lib"))
         copy(self, "libwg.so", src=os.path.join(self.build_folder, "out"), dst=os.path.join(self.package_folder, "bin"))

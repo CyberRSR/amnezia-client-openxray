@@ -6,6 +6,7 @@
     </array>
 
     <array name="qt_libs">
+        <item>armeabi-v7a;android8compat</item>
         <!-- %%INSERT_QT_LIBS%% -->
     </array>
 

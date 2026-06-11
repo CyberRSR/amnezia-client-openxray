@@ -39,7 +39,8 @@
 - Импорт OWG принимает два файла: OpenVPN `.ovpn` и AmneziaWG v2 `.conf`. AWG v1/v1.5 для OWG отклоняются.
 - В настройках OWG отображаются настройки OpenVPN и runtime-поля AmneziaWG v2.
 - Сохранённые VPN-профили можно экспортировать в один файл Amnezia `.vpn` или QR-код из настроек протокола. Экспорт включает только выбранное подключение и не включает API-подписки, admin-доступ, SSH-учётные данные, пароли и соседние контейнеры.
-- Релиз `v0.5` — debug Android arm64 сборка для тестирования этой OWG ветки (`org.amnezia.vpn.debugx`).
+- Релиз `v0.5` содержит отдельные debug APK для этой OWG ветки: `arm64-v8a` для актуальных устройств и `armeabi-v7a` для Android 8+ (`org.amnezia.vpn.debugx`).
+- Локальная пересборка Android 8 `armeabi-v7a` использует `APP_ANDROID_MIN_SDK=26`; для неё стоит указать `AMNEZIA_AWG_ANDROID_PREBUILT_DIR` на совместимые armv7 AWG-библиотеки, потому что свежий Go-built `libwg-go.so` может использовать time64 syscalls, заблокированные seccomp на Android 8.
 
 ## Ссылки
 

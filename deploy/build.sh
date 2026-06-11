@@ -123,7 +123,8 @@ case "$TARGET" in
     android)
         no_installers=1
         : ${CMAKE_GENERATOR:="Ninja"}
-        : ${ANDROID_PLATFORM:="android-28"}
+        : ${APP_ANDROID_MIN_SDK:=28}
+        : ${ANDROID_PLATFORM:="android-${APP_ANDROID_MIN_SDK}"}
 
         if [[ -n "$SIGN" ]]; then
             QT_ANDROID_SIGN_APK=TRUE
@@ -194,6 +195,8 @@ args=()
 [[ -n "$MACOS_NE" ]]                  && args+=("-DMACOS_NE=$MACOS_NE")
 [[ -n "$DEPLOY" ]]                    && args+=("-DDEPLOY=$DEPLOY")
 [[ -n "$ANDROID_ABI" ]]               && args+=("-DANDROID_ABI=$ANDROID_ABI")
+[[ -n "$APP_ANDROID_MIN_SDK" ]]       && args+=("-DAPP_ANDROID_MIN_SDK=$APP_ANDROID_MIN_SDK")
+[[ -n "$AMNEZIA_ENABLE_CONAN_PREBUILTS_REMOTE" ]] && args+=("-DAMNEZIA_ENABLE_CONAN_PREBUILTS_REMOTE=$AMNEZIA_ENABLE_CONAN_PREBUILTS_REMOTE")
 [[ -n "$ANDROID_SDK_ROOT" ]]          && args+=("-DANDROID_SDK_ROOT=$ANDROID_SDK_ROOT")
 [[ -n "$ANDROID_NDK_ROOT" ]]          && args+=("-DANDROID_NDK_ROOT=$ANDROID_NDK_ROOT")
 [[ -n "$ANDROID_PLATFORM" ]]          && args+=("-DANDROID_PLATFORM=$ANDROID_PLATFORM")

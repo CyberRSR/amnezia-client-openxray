@@ -663,7 +663,7 @@ macro(conan_provide_dependency method package_name)
     #       find_package (<PackageName>)
 
     # Filter out `REQUIRED` from the argument list, as the first call may fail
-    set(_find_args_${package_name} "${ARGN}")
+    set(_find_args_${package_name} ${ARGN})
     list(REMOVE_ITEM _find_args_${package_name} "REQUIRED")
     if(NOT "MODULE" IN_LIST _find_args_${package_name})
         find_package(${package_name} ${_find_args_${package_name}} BYPASS_PROVIDER PATHS "${_conan_generators_folder}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)

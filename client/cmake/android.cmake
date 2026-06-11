@@ -1,6 +1,7 @@
 message("Client android ${CMAKE_ANDROID_ARCH_ABI} build")
 
-set(APP_ANDROID_MIN_SDK 28)
+set(APP_ANDROID_MIN_SDK 28 CACHE STRING
+    "The minimum Android API level supported by the application or library")
 set(ANDROID_PLATFORM "android-${APP_ANDROID_MIN_SDK}" CACHE STRING
     "The minimum API level supported by the application or library" FORCE)
 
@@ -43,14 +44,53 @@ set(SOURCES ${SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/core/utils/installedAppsImageProvider.cpp
 )
 
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    add_library(android8compat SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/android/compat/android8_getentropy.c
+    )
+    set_target_properties(android8compat PROPERTIES
+        OUTPUT_NAME android8compat
+    )
+    target_link_options(android8compat PRIVATE
+        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/android/compat/android8_getentropy.version"
+        "-Wl,-z,global"
+    )
+    add_dependencies(${PROJECT} android8compat)
+    set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS $<TARGET_FILE:android8compat>)
+endif()
+
 
 find_package(awg-android REQUIRED)
-set(LIBS ${LIBS} amnezia::awg-android)
 set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS ${AMNEZIA_ANDROID_LIBWG_PATH} ${AMNEZIA_ANDROID_LIBWG_QUICK_PATH})
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a" AND APP_ANDROID_MIN_SDK LESS_EQUAL 26)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _awg_config)
+    get_target_property(AMNEZIA_ANDROID_LIBWG_GO_PATH amnezia::awg-android IMPORTED_LOCATION_${_awg_config})
+    if(NOT AMNEZIA_ANDROID_LIBWG_GO_PATH)
+        get_target_property(AMNEZIA_ANDROID_LIBWG_GO_PATH amnezia::awg-android IMPORTED_LOCATION)
+    endif()
+    set(AMNEZIA_ANDROID_LIBWG_GO_STAGED_PATH "${CMAKE_CURRENT_BINARY_DIR}/libwg-go.so")
+    configure_file(${AMNEZIA_ANDROID_LIBWG_GO_PATH} ${AMNEZIA_ANDROID_LIBWG_GO_STAGED_PATH} COPYONLY)
+    message(WARNING "Packaging libwg-go.so for lazy loading on armeabi-v7a Android 8 build")
+    set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS ${AMNEZIA_ANDROID_LIBWG_GO_STAGED_PATH})
+else()
+    set(LIBS ${LIBS} amnezia::awg-android)
+endif()
 
 find_package(amnezia-libxray REQUIRED)
 file(COPY ${AMNEZIA_LIBXRAY_PATH} DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/android/xray/libXray)
 
 find_package(openvpn-pt-android REQUIRED)
 set(LIBS ${LIBS} amnezia::openvpn-pt-android)
-set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS ${OPENVPN_PT_ANDROID_LIBCK_OVPN_PLUGIN_PATH})
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a" AND APP_ANDROID_MIN_SDK LESS_EQUAL 26)
+    message(WARNING "Using Android 8 libck-ovpn-plugin.so stub for armeabi-v7a build: Go runtime uses time64 syscalls blocked by Android 8 seccomp")
+    add_library(ckovpncompat SHARED
+        ${CMAKE_CURRENT_SOURCE_DIR}/android/compat/ck_ovpn_plugin_stub.c
+    )
+    set_target_properties(ckovpncompat PROPERTIES
+        OUTPUT_NAME ck-ovpn-plugin
+    )
+    add_dependencies(${PROJECT} ckovpncompat)
+    set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS $<TARGET_FILE:ckovpncompat>)
+else()
+    set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS ${OPENVPN_PT_ANDROID_LIBCK_OVPN_PLUGIN_PATH})
+endif()

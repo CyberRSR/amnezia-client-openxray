@@ -1,0 +1,6 @@
+LIBC_P {
+    global:
+        getentropy;
+    local:
+        *;
+};

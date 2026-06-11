@@ -94,3 +94,18 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.androidx.biometric)
 }
+
+tasks.configureEach {
+    if (name == "preBuild"
+        || name.startsWith("checkDebugDuplicateClasses")
+        || name.startsWith("compile")
+        || name.startsWith("desugar")
+        || name.startsWith("dex")
+        || name.startsWith("mergeExtDex")
+        || name.startsWith("mergeLibDex")
+        || name.startsWith("mergeProjectDex")
+        || name.startsWith("packageDebug")
+    ) {
+        dependsOn(":qt:patchQtAndroid8Jar")
+    }
+}
