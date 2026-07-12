@@ -364,9 +364,9 @@ PageType {
                     ExportController.generateOxrayNativeConfig()
                     PageController.showBusyIndicator(false)
 
-                    var serverName = ServersModel.getProcessedServerData("name")
+                    var serverName = ServersUiController.serverName(ServersUiController.processedServerId)
                     if (serverName === "") {
-                        serverName = ServersModel.getProcessedServerData("hostName")
+                        serverName = ServersUiController.serverHostName(ServersUiController.processedServerId)
                     }
 
                     PageController.goToShareConnectionPage(

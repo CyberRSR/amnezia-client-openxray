@@ -1,3 +1,15 @@
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.jar.JarEntry
+import java.util.jar.JarFile
+import java.util.jar.JarOutputStream
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Label
+import org.objectweb.asm.MethodVisitor
+import org.objectweb.asm.Opcodes
+
 plugins {
     id(libs.plugins.android.library.get().pluginId)
     id("property-delegate")
@@ -64,6 +76,95 @@ val patchQtAndroid8Jar by tasks.registering {
                 }
             }
         }
+
+        // Qt 6.10's showKeyboard() passes the API-30 callback directly to
+        // View.setWindowInsetsAnimationCallback(). The Android-8 placeholder
+        // above intentionally does not extend that unavailable API class, so
+        // ART rejects QtInputDelegate even on newer devices. Keep the
+        // API-26-safe placeholder and replace only showKeyboard() with the
+        // legacy InputMethodManager overload (available since API 3).
+        val patchedJar = qtAndroidJar.asFile.resolveSibling("${qtAndroidJar.asFile.name}.patched")
+        JarFile(qtAndroidJar.asFile).use { inputJar ->
+            JarOutputStream(patchedJar.outputStream().buffered()).use { outputJar ->
+                val entries = inputJar.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    outputJar.putNextEntry(JarEntry(entry.name))
+                    val originalBytes = inputJar.getInputStream(entry).use { it.readBytes() }
+                    if (entry.name == "org/qtproject/qt/android/QtInputDelegate.class") {
+                        val reader = ClassReader(originalBytes)
+                        val writer = ClassWriter(reader, 0)
+                        reader.accept(object : ClassVisitor(Opcodes.ASM9, writer) {
+                            override fun visitMethod(
+                                access: Int,
+                                name: String,
+                                descriptor: String,
+                                signature: String?,
+                                exceptions: Array<out String>?
+                            ): MethodVisitor? {
+                                val visitor = super.visitMethod(
+                                    access, name, descriptor, signature, exceptions
+                                )
+                                if (name != "showKeyboard"
+                                    || descriptor != "(Landroid/app/Activity;IIIIII)V") {
+                                    return visitor
+                                }
+
+                                val hasInputMethodManager = Label()
+                                visitor.visitCode()
+                                visitor.visitVarInsn(Opcodes.ALOAD, 0)
+                                visitor.visitFieldInsn(
+                                    Opcodes.GETFIELD,
+                                    "org/qtproject/qt/android/QtInputDelegate",
+                                    "m_imm",
+                                    "Landroid/view/inputmethod/InputMethodManager;"
+                                )
+                                visitor.visitJumpInsn(Opcodes.IFNONNULL, hasInputMethodManager)
+                                visitor.visitInsn(Opcodes.RETURN)
+                                visitor.visitLabel(hasInputMethodManager)
+                                visitor.visitFrame(Opcodes.F_SAME, 0, null, 0, null)
+                                visitor.visitVarInsn(Opcodes.ALOAD, 0)
+                                visitor.visitFieldInsn(
+                                    Opcodes.GETFIELD,
+                                    "org/qtproject/qt/android/QtInputDelegate",
+                                    "m_imm",
+                                    "Landroid/view/inputmethod/InputMethodManager;"
+                                )
+                                visitor.visitVarInsn(Opcodes.ALOAD, 0)
+                                visitor.visitFieldInsn(
+                                    Opcodes.GETFIELD,
+                                    "org/qtproject/qt/android/QtInputDelegate",
+                                    "m_currentEditText",
+                                    "Lorg/qtproject/qt/android/QtEditText;"
+                                )
+                                visitor.visitInsn(Opcodes.ICONST_0)
+                                visitor.visitMethodInsn(
+                                    Opcodes.INVOKEVIRTUAL,
+                                    "android/view/inputmethod/InputMethodManager",
+                                    "showSoftInput",
+                                    "(Landroid/view/View;I)Z",
+                                    false
+                                )
+                                visitor.visitInsn(Opcodes.POP)
+                                visitor.visitInsn(Opcodes.RETURN)
+                                visitor.visitMaxs(3, 8)
+                                visitor.visitEnd()
+                                return null
+                            }
+                        }, 0)
+                        outputJar.write(writer.toByteArray())
+                    } else {
+                        outputJar.write(originalBytes)
+                    }
+                    outputJar.closeEntry()
+                }
+            }
+        }
+        Files.move(
+            patchedJar.toPath(),
+            qtAndroidJar.asFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+        )
 
         val libsXmlFile = generatedLibsXml.asFile
         if (libsXmlFile.isFile) {

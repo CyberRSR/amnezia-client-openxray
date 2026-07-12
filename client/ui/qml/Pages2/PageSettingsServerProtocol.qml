@@ -34,9 +34,9 @@ PageType {
     function exportStoredConnection() {
         var serverId = ServersUiController.processedServerId
         var containerIndex = ServersUiController.processedContainerIndex
-        var serverName = ServersModel.getProcessedServerData("name")
+        var serverName = ServersUiController.serverName(serverId)
         if (!serverName) {
-            serverName = ServersModel.getProcessedServerData("hostName")
+            serverName = ServersUiController.serverHostName(serverId)
         }
         if (!serverName) {
             serverName = qsTr("server")

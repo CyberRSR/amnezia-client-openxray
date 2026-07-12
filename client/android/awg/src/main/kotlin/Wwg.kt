@@ -66,8 +66,9 @@ private const val FIRST_RETRY_DELAY_MS = 5_000L
 private const val NEXT_RETRY_DELAY_MS = 10_000L
 
 private val HEALTHCHECK_URLS = listOf(
-    "https://www.gstatic.com/generate_204",
-    "https://cp.cloudflare.com/generate_204"
+    // Literal IPs keep DNS stalls from stretching a five-second monitor round.
+    "https://1.1.1.1/cdn-cgi/trace",
+    "https://8.8.8.8/generate_204"
 )
 
 /**
