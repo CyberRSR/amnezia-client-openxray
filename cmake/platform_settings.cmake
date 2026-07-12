@@ -12,7 +12,7 @@ if(APPLE)
         set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
     else()
         set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "" FORCE)
-        set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "" FORCE)
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
     endif()
 endif()
 
@@ -28,6 +28,13 @@ endif()
 
 if (WIN32 OR APPLE)
     set(CMAKE_INSTALL_BINDIR ".")
+endif()
+
+# Apple NE-based apps do not support any dylibs or variations
+# So Qt would use the openssl bundled with system, not application
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android"
+        AND NOT(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR (APPLE AND MACOS_NE)))
+    list(APPEND _CONAN_INSTALL_ARGS "-o=openssl/*:shared=True")
 endif()
 
 list(PREPEND _CONAN_INSTALL_ARGS "--build=missing")

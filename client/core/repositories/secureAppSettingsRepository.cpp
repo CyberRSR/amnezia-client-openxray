@@ -280,6 +280,24 @@ void SecureAppSettingsRepository::toggleDevGatewayEnv(bool enabled)
     setValue("Conf/devGatewayEnv", enabled);
 }
 
+QByteArray SecureAppSettingsRepository::readGatewayProxyUrls(const QString &cacheKey) const
+{
+    if (cacheKey.isEmpty()) {
+        return {};
+    }
+
+    return value(QStringLiteral("Conf/proxyUrls/") + cacheKey).toByteArray();
+}
+
+void SecureAppSettingsRepository::writeGatewayProxyUrls(const QString &cacheKey, const QByteArray &proxyUrlsEncrypted)
+{
+    if (cacheKey.isEmpty()) {
+        return;
+    }
+
+    setValue(QStringLiteral("Conf/proxyUrls/") + cacheKey, proxyUrlsEncrypted);
+}
+
 bool SecureAppSettingsRepository::isKillSwitchEnabled() const
 {
     return value("Conf/killSwitchEnabled", true).toBool();
@@ -424,26 +442,6 @@ void SecureAppSettingsRepository::clearSettings()
     m_settings->clearSettings();
     m_settings->setValue("Conf/installationUuid", uuid);
     emit settingsCleared();
-}
-
-QString SecureAppSettingsRepository::nextAvailableServerName() const
-{
-    int i = 0;
-    bool nameExist = false;
-
-    do {
-        i++;
-        nameExist = false;
-        QJsonArray servers = QJsonDocument::fromJson(value("Servers/serversList").toByteArray()).array();
-        for (const QJsonValue &server : servers) {
-            if (server.toObject().value(configKey::description).toString() == QString("Server") + " " + QString::number(i)) {
-                nameExist = true;
-                break;
-            }
-        }
-    } while (nameExist);
-
-    return QString("Server") + " " + QString::number(i);
 }
 
 void SecureAppSettingsRepository::setInstallationUuid(const QString &uuid)

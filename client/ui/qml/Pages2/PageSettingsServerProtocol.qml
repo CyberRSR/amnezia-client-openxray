@@ -17,8 +17,9 @@ import "../Components"
 PageType {
     id: root
 
-    property bool isClearCacheVisible: ServersUiController.isProcessedServerHasWriteAccess() && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
-    property bool isStoredConnectionExportVisible: !ServersModel.isServerFromApi(ServersUiController.processedServerIndex)
+    property bool isUnsupportedContainer: ContainerProps.isUnsupportedContainer(ServersUiController.processedContainerIndex)
+    property bool isClearCacheVisible: !isUnsupportedContainer && ServersUiController.isProcessedServerHasWriteAccess() && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
+    property bool isStoredConnectionExportVisible: !ServersUiController.isServerFromApi(ServersUiController.processedServerId)
                                                    && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
 
     Connections {
@@ -31,7 +32,7 @@ PageType {
     }
 
     function exportStoredConnection() {
-        var serverId = ServersUiController.getServerId(ServersUiController.processedServerIndex)
+        var serverId = ServersUiController.processedServerId
         var containerIndex = ServersUiController.processedContainerIndex
         var serverName = ServersModel.getProcessedServerData("name")
         if (!serverName) {
@@ -90,10 +91,11 @@ PageType {
                 Layout.bottomMargin: 32
 
                 headerText: ContainersModel.getProcessedContainerName() + qsTr(" settings")
+                descriptionText: root.isUnsupportedContainer ? qsTr("This protocol is no longer supported.") : ""
             }
         }
 
-        model: ProtocolsModel
+        model: root.isUnsupportedContainer ? null : ProtocolsModel
 
         delegate: ColumnLayout {
             id: delegateContent
@@ -114,7 +116,7 @@ PageType {
 
                 clickedFunction: function() {
                     if (isClientProtocolExists) {
-                        InstallController.openClientSettings(ServersUiController.getServerId(ServersUiController.processedServerIndex), ServersUiController.processedContainerIndex, protocolIndex)
+                        InstallController.openClientSettings(ServersUiController.processedServerId, ServersUiController.processedContainerIndex, protocolIndex)
                         PageController.goToPage(clientProtocolPage);
                     } else {
                         PageController.showNotificationMessage(qsTr("Click the \"connect\" button to create a connection configuration"))
@@ -142,7 +144,7 @@ PageType {
                 visible: delegateContent.isServerSettingsVisible
 
                 clickedFunction: function() {
-                    InstallController.openServerSettings(ServersUiController.getServerId(ServersUiController.processedServerIndex), ServersUiController.processedContainerIndex, protocolIndex)
+                    InstallController.openServerSettings(ServersUiController.processedServerId, ServersUiController.processedContainerIndex, protocolIndex)
                     PageController.goToPage(serverProtocolPage);
                 }
 
@@ -203,14 +205,14 @@ PageType {
                     var noButtonText = qsTr("Cancel")
 
                     var yesButtonFunction = function() {
-                        if (ConnectionController.isConnected && ServersModel.getDefaultServerData("defaultContainer") === ServersUiController.processedContainerIndex) {
+                        if (ConnectionController.isConnected && ServersUiController.serverDefaultContainer(ServersUiController.defaultServerId) === ServersUiController.processedContainerIndex) {
                             var message = qsTr("Unable to clear %1 profile while there is an active connection").arg(ContainersModel.getProcessedContainerName())
                             PageController.showNotificationMessage(message)
                             return
                         }
 
                         PageController.showBusyIndicator(true)
-                        InstallController.clearCachedProfile(ServersUiController.getServerId(ServersUiController.processedServerIndex), ServersUiController.processedContainerIndex)
+                        InstallController.clearCachedProfile(ServersUiController.processedServerId, ServersUiController.processedContainerIndex)
                         PageController.showBusyIndicator(false)
                     }
 
@@ -249,12 +251,12 @@ PageType {
 
                     var yesButtonFunction = function() {
                         if (ServersUiController.isDefaultServerCurrentlyProcessed() && ConnectionController.isConnected
-                                && ServersModel.getDefaultServerData("defaultContainer") === ServersUiController.processedContainerIndex) {
+                                && ServersUiController.serverDefaultContainer(ServersUiController.defaultServerId) === ServersUiController.processedContainerIndex) {
                             PageController.showNotificationMessage(qsTr("Cannot remove active container"))
                         } else
                         {
                             PageController.goToPage(PageEnum.PageDeinstalling)
-                            InstallController.removeContainer(ServersUiController.getServerId(ServersUiController.processedServerIndex), ServersUiController.processedContainerIndex)
+                            InstallController.removeContainer(ServersUiController.processedServerId, ServersUiController.processedContainerIndex)
                         }
                     }
                     var noButtonFunction = function() {

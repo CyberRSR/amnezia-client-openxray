@@ -59,7 +59,9 @@ public:
     void setDevGatewayEndpoint();
     bool isDevGatewayEnv(bool isTestPurchase = false) const;
     void toggleDevGatewayEnv(bool enabled);
-    
+    QByteArray readGatewayProxyUrls(const QString &cacheKey) const;
+    void writeGatewayProxyUrls(const QString &cacheKey, const QByteArray &proxyUrlsEncrypted);
+
     bool isKillSwitchEnabled() const;
     void setKillSwitchEnabled(bool enabled);
     bool isStrictKillSwitchEnabled() const;
@@ -89,8 +91,6 @@ public:
     QByteArray backupAppConfig() const;
     bool restoreAppConfig(const QByteArray &cfg);
     void clearSettings();
-
-    QString nextAvailableServerName() const;
 
     QByteArray xraySavedConfigs() const;
     void setXraySavedConfigs(const QByteArray &data);
