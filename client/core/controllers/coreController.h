@@ -63,6 +63,7 @@
 #include "ui/models/clientManagementModel.h"
 #include "ui/models/protocols/awgConfigModel.h"
 #include "ui/models/protocols/owgConfigModel.h"
+#include "ui/models/protocols/wwgConfigModel.h"
 #include "ui/models/protocols/openvpnConfigModel.h"
 #include "ui/models/protocols/wireguardConfigModel.h"
 #include "ui/models/protocols/xrayConfigModel.h"
@@ -221,6 +222,7 @@ private:
     WireGuardConfigModel* m_wireGuardConfigModel;
     AwgConfigModel* m_awgConfigModel;
     OwgConfigModel* m_owgConfigModel;
+    WwgConfigModel* m_wwgConfigModel;
 #ifdef Q_OS_WINDOWS
     Ikev2ConfigModel* m_ikev2ConfigModel;
 #endif

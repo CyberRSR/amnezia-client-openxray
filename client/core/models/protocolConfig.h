@@ -15,6 +15,7 @@
 
 #include "core/models/protocols/awgProtocolConfig.h"
 #include "core/models/protocols/owgProtocolConfig.h"
+#include "core/models/protocols/wwgProtocolConfig.h"
 #include "core/models/protocols/wireGuardProtocolConfig.h"
 #include "core/models/protocols/openVpnProtocolConfig.h"
 #include "core/models/protocols/xrayProtocolConfig.h"
@@ -35,6 +36,7 @@ struct ProtocolConfig {
     using Variant = std::variant<
         AwgProtocolConfig,
         OwgProtocolConfig,
+        WwgProtocolConfig,
         WireGuardProtocolConfig,
         OpenVpnProtocolConfig,
         XrayProtocolConfig,

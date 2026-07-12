@@ -21,6 +21,7 @@
 #include "core/utils/constants/protocolConstants.h"
 #include "ui/models/protocols/awgConfigModel.h"
 #include "ui/models/protocols/owgConfigModel.h"
+#include "ui/models/protocols/wwgConfigModel.h"
 #include "ui/models/protocols/wireguardConfigModel.h"
 #include "ui/models/protocols/openvpnConfigModel.h"
 #include "ui/models/protocols/xrayConfigModel.h"
@@ -34,6 +35,7 @@
 #include "core/models/containerConfig.h"
 #include "core/models/protocols/awgProtocolConfig.h"
 #include "core/models/protocols/owgProtocolConfig.h"
+#include "core/models/protocols/wwgProtocolConfig.h"
 #include "core/models/protocols/wireGuardProtocolConfig.h"
 #include "core/models/protocols/openVpnProtocolConfig.h"
 #include "core/models/protocols/xrayProtocolConfig.h"
@@ -48,7 +50,8 @@ InstallUiController::InstallUiController(InstallController *installController,
                                          OpenVpnConfigModel *openVpnConfigModel,
                                          XrayConfigModel *xrayConfigModel,
                                          TorConfigModel *torConfigModel,
-                                         OwgConfigModel *owgConfigModel,
+                                          OwgConfigModel *owgConfigModel,
+                                          WwgConfigModel *wwgConfigModel,
 #ifdef Q_OS_WINDOWS
                                          Ikev2ConfigModel *ikev2ConfigModel,
 #endif
@@ -70,6 +73,7 @@ InstallUiController::InstallUiController(InstallController *installController,
       m_xrayConfigModel(xrayConfigModel),
       m_torConfigModel(torConfigModel),
       m_owgConfigModel(owgConfigModel),
+      m_wwgConfigModel(wwgConfigModel),
 #ifdef Q_OS_WINDOWS
       m_ikev2ConfigModel(ikev2ConfigModel),
 #endif
@@ -230,6 +234,10 @@ bool InstallUiController::buildContainerConfigFromModel(int containerIndex, int 
     }
     case Proto::OWG: {
         containerConfig.protocolConfig = OwgProtocolConfig::fromJson(m_owgConfigModel->getConfig().value(configKey::owg).toObject());
+        break;
+    }
+    case Proto::WWG: {
+        containerConfig.protocolConfig = WwgProtocolConfig::fromJson(m_wwgConfigModel->getConfig().value(configKey::wwg).toObject());
         break;
     }
     case Proto::WireGuard: {
@@ -710,6 +718,7 @@ void InstallUiController::updateProtocolConfigModel(const QString &serverId, int
     switch (protocolType) {
     case Proto::Awg: updateIfPresent(m_awgConfigModel, containerConfig.getAwgProtocolConfig()); break;
     case Proto::OWG: updateIfPresent(m_owgConfigModel, containerConfig.getOwgProtocolConfig()); break;
+    case Proto::WWG: updateIfPresent(m_wwgConfigModel, containerConfig.getWwgProtocolConfig()); break;
     case Proto::WireGuard: updateIfPresent(m_wireGuardConfigModel, containerConfig.getWireGuardProtocolConfig()); break;
     case Proto::OpenVpn: updateIfPresent(m_openVpnConfigModel, containerConfig.getOpenVpnProtocolConfig()); break;
     case Proto::Xray:

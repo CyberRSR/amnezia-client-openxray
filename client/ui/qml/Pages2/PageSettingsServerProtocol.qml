@@ -103,7 +103,7 @@ PageType {
             width: listView.width
 
             property bool isClientSettingsVisible: isWireGuard || isAwg
-            property bool isServerSettingsVisible: ServersUiController.isProcessedServerHasWriteAccess() || isOwg
+            property bool isServerSettingsVisible: ServersUiController.isProcessedServerHasWriteAccess() || isOwg || isWwg
 
             LabelWithButtonType {
                 id: clientSettings

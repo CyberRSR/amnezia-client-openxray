@@ -19,6 +19,7 @@
 #include "ui/models/protocolsModel.h"
 #include "ui/models/protocols/awgConfigModel.h"
 #include "ui/models/protocols/owgConfigModel.h"
+#include "ui/models/protocols/wwgConfigModel.h"
 #include "ui/models/protocols/wireguardConfigModel.h"
 #include "ui/models/protocols/openvpnConfigModel.h"
 #include "ui/models/protocols/xrayConfigModel.h"
@@ -48,6 +49,7 @@ public:
                                XrayConfigModel* xrayConfigModel,
                                TorConfigModel* torConfigModel,
                                OwgConfigModel* owgConfigModel,
+                               WwgConfigModel* wwgConfigModel,
 #ifdef Q_OS_WINDOWS
                                Ikev2ConfigModel* ikev2ConfigModel,
 #endif
@@ -151,6 +153,7 @@ private:
     XrayConfigModel* m_xrayConfigModel;
     TorConfigModel* m_torConfigModel;
     OwgConfigModel* m_owgConfigModel;
+    WwgConfigModel* m_wwgConfigModel;
 #ifdef Q_OS_WINDOWS
     Ikev2ConfigModel* m_ikev2ConfigModel;
 #endif

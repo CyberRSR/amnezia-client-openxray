@@ -1,6 +1,6 @@
 from conan import ConanFile
 from conan.tools.cmake import cmake_layout, CMake, CMakeToolchain
-from conan.tools.files import copy, replace_in_file, save
+from conan.tools.files import copy, replace_in_file, save, patch
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.scm import Git
 
@@ -10,7 +10,14 @@ import platform
 class AwgAndroid(ConanFile):
     name = "awg-android"
     version = "2.0.1"
+    exports_sources = "patches/*"
     settings = "os", "arch", "build_type", "compiler"
+
+    _upstream_revision = "fb64e74ba5a0a54e9185b8776bcb8088afb772c9"
+
+    @property
+    def _source_root(self):
+        return os.path.join(self.source_folder, "upstream")
 
     def configure(self):
         self.settings.rm_safe("compiler.libcxx")
@@ -30,11 +37,19 @@ class AwgAndroid(ConanFile):
             raise ConanInvalidConfiguration(f"{self.name} v{self.version} does not support {self.settings.os}")
 
     def source(self):
-        git = Git(self)
+        git = Git(self, folder=self._source_root)
         git.clone(
             url="https://github.com/amnezia-vpn/amneziawg-android.git",
             target=".",
-            args=["--recurse-submodules", "--branch", f"v{self.version}"]
+            args=["--recurse-submodules"]
+        )
+        git.checkout(self._upstream_revision)
+        git.run("submodule update --init --recursive")
+        patch(
+            self,
+            patch_file=os.path.join(self.export_sources_folder, "patches", "0001-add-wwg-netstack-relay.patch"),
+            base_path=self._source_root,
+            strip=0,
         )
 
     def generate(self):
@@ -48,7 +63,7 @@ class AwgAndroid(ConanFile):
     def _patch_sources(self):
         host_system = platform.system()
         if host_system == "Windows":
-            makefile = os.path.join(self.source_folder, "tunnel", "tools", "libwg-go", "Makefile")
+            makefile = os.path.join(self._source_root, "tunnel", "tools", "libwg-go", "Makefile")
             with open(makefile, "r", encoding="utf-8") as file:
                 contents = file.read()
             target = "$(BUILDDIR)/go-$(GO_VERSION)/.prepared:"
@@ -70,7 +85,7 @@ class AwgAndroid(ConanFile):
             with open(makefile, "w", encoding="utf-8") as file:
                 file.write(contents)
 
-            cmake_lists = os.path.join(self.source_folder, "tunnel", "tools", "CMakeLists.txt")
+            cmake_lists = os.path.join(self._source_root, "tunnel", "tools", "CMakeLists.txt")
             with open(cmake_lists, "r", encoding="utf-8") as file:
                 contents = file.read()
             marker = "# Strip unwanted ELF sections to prevent DT_FLAGS_1 warnings on old Android versions"
@@ -81,22 +96,22 @@ class AwgAndroid(ConanFile):
 
         if host_system == 'Darwin':
             replace_in_file(self,
-                os.path.join(self.source_folder, "tunnel", "tools", "libwg-go", "Makefile"),
+                os.path.join(self._source_root, "tunnel", "tools", "libwg-go", "Makefile"),
                 'flock "$@.lock" -c \' \\\n',
                 "",
             )
             replace_in_file(self,
-                os.path.join(self.source_folder, "tunnel", "tools", "libwg-go", "Makefile"),
+                os.path.join(self._source_root, "tunnel", "tools", "libwg-go", "Makefile"),
                 'mv "$@.tmp" "$@"\'',
                 'mv "$@.tmp" "$@"',
             )
             replace_in_file(self,
-                os.path.join(self.source_folder, "tunnel", "tools", "libwg-go", "Makefile"),
+                os.path.join(self._source_root, "tunnel", "tools", "libwg-go", "Makefile"),
                 'touch "$@"\'',
                 'touch "$@"',
             )
             replace_in_file(self,
-                os.path.join(self.source_folder, "tunnel", "tools", "libwg-go", "Makefile"),
+                os.path.join(self._source_root, "tunnel", "tools", "libwg-go", "Makefile"),
                 'sha256sum -c',
                 'shasum -a 256 -c'
             )
@@ -115,19 +130,25 @@ class AwgAndroid(ConanFile):
             return None
         abi_dir = os.path.join(root, self._abi_name())
         if os.path.isfile(os.path.join(abi_dir, "libwg-go.so")):
-            return abi_dir
-        if os.path.isfile(os.path.join(root, "libwg-go.so")):
-            return root
-        raise ConanInvalidConfiguration(
-            f"AMNEZIA_AWG_ANDROID_PREBUILT_DIR does not contain {self._abi_name()} AWG libraries"
-        )
+            candidate = abi_dir
+        elif os.path.isfile(os.path.join(root, "libwg-go.so")):
+            candidate = root
+        else:
+            raise ConanInvalidConfiguration(
+                f"AMNEZIA_AWG_ANDROID_PREBUILT_DIR does not contain {self._abi_name()} AWG libraries"
+            )
+        if not os.path.isfile(os.path.join(candidate, "wwg-netstack-v2.marker")):
+            raise ConanInvalidConfiguration(
+                "Refusing an unverified AWG prebuilt: WWG requires v2.0.1 with netstack JNI symbols"
+            )
+        return candidate
 
     def build(self):
         if self._prebuilt_dir():
             return
         self._patch_sources()
         cmake = CMake(self)
-        cmake.configure(build_script_folder=os.path.join(self.source_folder, "tunnel", "tools"))
+        cmake.configure(build_script_folder=os.path.join(self._source_root, "tunnel", "tools"))
         cmake.build(target=["libwg-go.so", "libwg.so", "libwg-quick.so"])
 
     def package(self):
@@ -149,10 +170,14 @@ extern "C" {
 #endif
 
 extern GoInt32 awgTurnOn(GoString interfaceName, GoInt32 tunFd, GoString settings);
+extern GoInt32 awgTurnOnNetstack(GoString interfaceName, GoString localAddresses,
+    GoString dnsServers, GoInt32 mtu, GoString settings, GoString relayHost, GoInt32 relayPort);
 extern void awgTurnOff(GoInt32 tunnelHandle);
 extern GoInt32 awgGetSocketV4(GoInt32 tunnelHandle);
 extern GoInt32 awgGetSocketV6(GoInt32 tunnelHandle);
 extern char* awgGetConfig(GoInt32 tunnelHandle);
+extern GoInt32 awgGetRelayPort(GoInt32 tunnelHandle);
+extern GoInt32 awgIsRelayHealthy(GoInt32 tunnelHandle);
 extern char* awgVersion(void);
 
 #ifdef __cplusplus

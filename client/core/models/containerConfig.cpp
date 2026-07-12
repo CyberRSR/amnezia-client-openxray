@@ -76,6 +76,16 @@ const OwgProtocolConfig* ContainerConfig::getOwgProtocolConfig() const
     return protocolConfig.as<OwgProtocolConfig>();
 }
 
+WwgProtocolConfig* ContainerConfig::getWwgProtocolConfig()
+{
+    return protocolConfig.as<WwgProtocolConfig>();
+}
+
+const WwgProtocolConfig* ContainerConfig::getWwgProtocolConfig() const
+{
+    return protocolConfig.as<WwgProtocolConfig>();
+}
+
 WireGuardProtocolConfig* ContainerConfig::getWireGuardProtocolConfig()
 {
     return protocolConfig.as<WireGuardProtocolConfig>();

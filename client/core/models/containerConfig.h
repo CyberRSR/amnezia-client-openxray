@@ -44,6 +44,9 @@ struct ContainerConfig {
 
     OwgProtocolConfig* getOwgProtocolConfig();
     const OwgProtocolConfig* getOwgProtocolConfig() const;
+
+    WwgProtocolConfig* getWwgProtocolConfig();
+    const WwgProtocolConfig* getWwgProtocolConfig() const;
     
     WireGuardProtocolConfig* getWireGuardProtocolConfig();
     const WireGuardProtocolConfig* getWireGuardProtocolConfig() const;

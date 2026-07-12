@@ -90,6 +90,11 @@ namespace amnezia
         constexpr QLatin1String sftp("sftp");
         constexpr QLatin1String awg("awg");
         constexpr QLatin1String owg("owg");
+        constexpr QLatin1String wwg("wwg");
+        constexpr QLatin1String underlayAwg("underlay_awg");
+        constexpr QLatin1String overlayAwg("overlay_awg");
+        constexpr QLatin1String awgUnderlayConfigData("awg_underlay_config_data");
+        constexpr QLatin1String awgOverlayConfigData("awg_overlay_config_data");
         constexpr QLatin1String vless("vless");
         constexpr QLatin1String xray("xray");
         constexpr QLatin1String ssxray("ssxray");
@@ -117,6 +122,7 @@ namespace amnezia
         constexpr QLatin1String amneziaWireguard("amnezia-wireguard");
         constexpr QLatin1String amneziaAwg("amnezia-awg");
         constexpr QLatin1String amneziaOwg("amnezia-owg");
+        constexpr QLatin1String amneziaWwg("amnezia-wwg");
         constexpr QLatin1String amneziaXray("amnezia-xray");
         constexpr QLatin1String amneziaSsxray("amnezia-ssxray");
 

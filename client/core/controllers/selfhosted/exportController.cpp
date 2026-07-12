@@ -73,6 +73,13 @@ bool isStoredContainerExportable(const ContainerConfig &containerConfig)
         }
     }
 
+    if (containerConfig.container == DockerContainer::WWG) {
+        const WwgProtocolConfig *wwg = containerConfig.getWwgProtocolConfig();
+        if (!wwg || !wwg->isValidV2()) {
+            return false;
+        }
+    }
+
     return true;
 }
 

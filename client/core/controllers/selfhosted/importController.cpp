@@ -28,6 +28,7 @@
 #include "core/utils/constants/configKeys.h"
 #include "core/utils/constants/protocolConstants.h"
 #include "core/utils/qrCodeUtils.h"
+#include "core/models/protocols/wwgProtocolConfig.h"
 
 using namespace amnezia;
 using namespace ProtocolUtils;
@@ -326,7 +327,7 @@ ImportController::ImportResult ImportController::extractOwgConfigFromData(const 
     QJsonObject config;
     config[configKey::containers] = containers;
     config[configKey::defaultContainer] = QString(configKey::amneziaOwg);
-    config[configKey::description] = m_appSettingsRepository->nextAvailableServerName();
+    config[configKey::description] = m_serversRepository->nextAvailableServerName();
     config[configKey::hostName] = openVpnConfig.value(configKey::hostName).toString();
 
     if (openVpnConfig.contains(configKey::dns1)) {
@@ -341,6 +342,79 @@ ImportController::ImportResult ImportController::extractOwgConfigFromData(const 
     }
 
     checkForMaliciousStrings(config, result.maliciousWarningText);
+    result.config = config;
+    return result;
+}
+
+ImportController::ImportResult ImportController::extractWwgConfigFromData(const QString &underlayAwgData,
+                                                                          const QString &overlayAwgData,
+                                                                          const QString &configFileName)
+{
+    ImportResult result;
+    result.configFileName = configFileName;
+    result.configType = ConfigTypes::Amnezia;
+
+    ConfigTypes underlayType = ConfigTypes::WireGuard;
+    ConfigTypes overlayType = ConfigTypes::WireGuard;
+    const QJsonObject underlayConfig = extractWireGuardConfig(underlayAwgData, underlayType);
+    const QJsonObject overlayConfig = extractWireGuardConfig(overlayAwgData, overlayType);
+    if (underlayConfig.isEmpty() || overlayConfig.isEmpty()
+            || underlayType != ConfigTypes::Awg || overlayType != ConfigTypes::Awg) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    const QJsonArray underlayContainers = underlayConfig.value(configKey::containers).toArray();
+    const QJsonArray overlayContainers = overlayConfig.value(configKey::containers).toArray();
+    if (underlayContainers.isEmpty() || overlayContainers.isEmpty()) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    QJsonObject underlayProtocol = underlayContainers.first().toObject().value(configKey::awg).toObject();
+    QJsonObject overlayProtocol = overlayContainers.first().toObject().value(configKey::awg).toObject();
+    const QJsonObject underlayClient = QJsonDocument::fromJson(
+                underlayProtocol.value(configKey::lastConfig).toString().toUtf8()).object();
+    const QJsonObject overlayClient = QJsonDocument::fromJson(
+                overlayProtocol.value(configKey::lastConfig).toString().toUtf8()).object();
+
+    if (underlayProtocol.value(configKey::protocolVersion).toString() != protocols::awg::awgV2
+            || overlayProtocol.value(configKey::protocolVersion).toString() != protocols::awg::awgV2
+            || !WwgProtocolConfig::hasRequiredAwgV2Fields(underlayClient)
+            || !WwgProtocolConfig::hasRequiredAwgV2Fields(overlayClient)) {
+        result.errorCode = ErrorCode::ImportInvalidConfigError;
+        return result;
+    }
+
+    forceAwgV2(underlayProtocol);
+    forceAwgV2(overlayProtocol);
+
+    QJsonObject wwgProtocol;
+    wwgProtocol[configKey::underlayAwg] = underlayProtocol;
+    wwgProtocol[configKey::overlayAwg] = overlayProtocol;
+
+    QJsonObject wwgContainer;
+    wwgContainer[configKey::container] = QString(configKey::amneziaWwg);
+    wwgContainer[configKey::wwg] = wwgProtocol;
+
+    QJsonObject config;
+    config[configKey::containers] = QJsonArray { wwgContainer };
+    config[configKey::defaultContainer] = QString(configKey::amneziaWwg);
+    config[configKey::description] = m_serversRepository->nextAvailableServerName();
+    config[configKey::hostName] = underlayConfig.value(configKey::hostName).toString();
+
+    // The system VPN interface belongs to the overlay, so its DNS settings win.
+    if (overlayConfig.contains(configKey::dns1)) {
+        config[configKey::dns1] = overlayConfig.value(configKey::dns1);
+    } else if (underlayConfig.contains(configKey::dns1)) {
+        config[configKey::dns1] = underlayConfig.value(configKey::dns1);
+    }
+    if (overlayConfig.contains(configKey::dns2)) {
+        config[configKey::dns2] = overlayConfig.value(configKey::dns2);
+    } else if (underlayConfig.contains(configKey::dns2)) {
+        config[configKey::dns2] = underlayConfig.value(configKey::dns2);
+    }
+
     result.config = config;
     return result;
 }
@@ -869,6 +943,41 @@ void ImportController::processAmneziaConfig(QJsonObject &config) const
     for (auto i = 0; i < containers.size(); i++) {
         auto container = containers.at(i).toObject();
         auto dockerContainer = ContainerUtils::containerFromString(container.value(configKey::container).toString());
+        if (dockerContainer == DockerContainer::WWG) {
+            QJsonObject wwgConfig = container.value(configKey::wwg).toObject();
+            QJsonObject underlayConfig = wwgConfig.value(configKey::underlayAwg).toObject();
+            QJsonObject overlayConfig = wwgConfig.value(configKey::overlayAwg).toObject();
+
+            const auto validateAndNormalize = [](QJsonObject &awgConfig) {
+                const QString serializedClient = awgConfig.value(configKey::lastConfig).toString();
+                QJsonObject clientConfig = QJsonDocument::fromJson(serializedClient.toUtf8()).object();
+                if (serializedClient.isEmpty()
+                        || awgConfig.value(configKey::protocolVersion).toString() != protocols::awg::awgV2
+                        || !WwgProtocolConfig::hasRequiredAwgV2Fields(clientConfig)) {
+                    return false;
+                }
+                if (clientConfig.value(configKey::mtu).toString().isEmpty()) {
+                    clientConfig[configKey::mtu] = protocols::awg::defaultMtu;
+                }
+                clientConfig[configKey::isObfuscationEnabled] = true;
+                awgConfig[configKey::protocolVersion] = protocols::awg::awgV2;
+                awgConfig[configKey::lastConfig] = QString::fromUtf8(
+                            QJsonDocument(clientConfig).toJson(QJsonDocument::Compact));
+                return true;
+            };
+
+            if (!validateAndNormalize(underlayConfig) || !validateAndNormalize(overlayConfig)) {
+                config = {};
+                return;
+            }
+
+            wwgConfig[configKey::underlayAwg] = underlayConfig;
+            wwgConfig[configKey::overlayAwg] = overlayConfig;
+            container[configKey::wwg] = wwgConfig;
+            containers.replace(i, container);
+            config.insert(configKey::containers, containers);
+            continue;
+        }
         if (dockerContainer == DockerContainer::OWG) {
             auto owgConfig = container.value(configKey::owg).toObject();
             auto awgContainerConfig = owgConfig.value(configKey::awg).toObject();

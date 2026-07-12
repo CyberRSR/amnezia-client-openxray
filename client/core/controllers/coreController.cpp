@@ -89,6 +89,9 @@ void CoreController::initModels()
     m_owgConfigModel = new OwgConfigModel(this);
     setQmlContextProperty("OwgConfigModel", m_owgConfigModel);
 
+    m_wwgConfigModel = new WwgConfigModel(this);
+    setQmlContextProperty("WwgConfigModel", m_wwgConfigModel);
+
     m_xrayConfigModel = new XrayConfigModel(this);
     setQmlContextProperty("XrayConfigModel", m_xrayConfigModel);
 
@@ -181,7 +184,7 @@ void CoreController::initControllers()
 
     m_installUiController = new InstallUiController(m_installController, m_serversController, m_settingsController, m_protocolsModel, m_usersController,
                                                      m_awgConfigModel, m_wireGuardConfigModel, m_openVpnConfigModel, m_xrayConfigModel, m_torConfigModel,
-                                                     m_owgConfigModel,
+                                                     m_owgConfigModel, m_wwgConfigModel,
 #ifdef Q_OS_WINDOWS
                                                      m_ikev2ConfigModel,
 #endif

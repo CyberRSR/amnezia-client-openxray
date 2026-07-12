@@ -274,6 +274,7 @@ PageType {
         backupRestore,
         oxrayFiles,
         owgFiles,
+        wwgFiles,
         fileOpen,
         qrScan,
         restorePurchases,
@@ -382,6 +383,32 @@ PageType {
             }
 
             if (ImportController.extractOwgConfigFromFiles(openVpnFileName, awgFileName)) {
+                PageController.goToPage(PageEnum.PageSetupWizardViewConfig)
+            }
+        }
+    }
+
+    QtObject {
+        id: wwgFiles
+
+        property string title: qsTr("WWG (AmneziaWG v2 + AmneziaWG v2)")
+        property string description: qsTr("Create one WWG profile from entry and exit AmneziaWG v2 configs")
+        property string imageSource: "qrc:/images/controls/file-cog-2.svg"
+        property bool isVisible: Qt.platform.os === "android"
+        property var handler: function() {
+            var underlayFileName = SystemController.getFileName(qsTr("Open entry AmneziaWG v2 config"),
+                                                                 qsTr("AmneziaWG config (*.conf)"))
+            if (underlayFileName === "") {
+                return
+            }
+
+            var overlayFileName = SystemController.getFileName(qsTr("Open exit AmneziaWG v2 config"),
+                                                                qsTr("AmneziaWG config (*.conf)"))
+            if (overlayFileName === "") {
+                return
+            }
+
+            if (ImportController.extractWwgConfigFromFiles(underlayFileName, overlayFileName)) {
                 PageController.goToPage(PageEnum.PageSetupWizardViewConfig)
             }
         }

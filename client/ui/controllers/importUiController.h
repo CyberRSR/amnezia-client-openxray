@@ -22,6 +22,7 @@ public slots:
     void clearConfigFileName();
     bool extractConfigFromFile(const QString &fileName);
     bool extractOwgConfigFromFiles(const QString &openVpnFileName, const QString &awgFileName);
+    bool extractWwgConfigFromFiles(const QString &underlayAwgFileName, const QString &overlayAwgFileName);
     bool extractConfigFromData(QString data);
     bool extractConfigFromQr(const QByteArray &data);
     QString getConfig();

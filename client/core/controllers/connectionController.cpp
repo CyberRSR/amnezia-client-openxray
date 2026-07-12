@@ -303,6 +303,34 @@ QJsonObject ConnectionController::createConnectionConfiguration(const QPair<QStr
         return vpnConfiguration;
     }
 
+    if (container == DockerContainer::WWG) {
+        const auto *wwgConfig = processedConfig.as<WwgProtocolConfig>();
+        if (!wwgConfig || !wwgConfig->hasClientConfig() || !wwgConfig->isValidV2()) {
+            return vpnConfiguration;
+        }
+
+        const auto prepareAwgV2 = [](QJsonObject config) {
+            if (config.value(configKey::mtu).toString().isEmpty()) {
+                config[configKey::mtu] = protocols::awg::defaultMtu;
+            }
+            config[configKey::protocolVersion] = protocols::awg::awgV2;
+            config[configKey::isObfuscationEnabled] = true;
+            return config;
+        };
+
+        const QJsonObject underlay = prepareAwgV2(wwgConfig->underlayClientConfigJson());
+        const QJsonObject overlay = prepareAwgV2(wwgConfig->overlayClientConfigJson());
+        vpnConfiguration.insert(configKey::awgUnderlayConfigData, underlay);
+        vpnConfiguration.insert(configKey::awgOverlayConfigData, overlay);
+        vpnConfiguration[configKey::vpnProto] = QStringLiteral("WWG");
+        vpnConfiguration[configKey::dns1] = dns.first;
+        vpnConfiguration[configKey::dns2] = dns.second;
+        vpnConfiguration[configKey::hostName] = underlay.value(configKey::hostName).toString(hostName);
+        vpnConfiguration[configKey::description] = description;
+        vpnConfiguration[configKey::configVersion] = configVersion;
+        return vpnConfiguration;
+    }
+
     QJsonObject vpnConfigData = processedConfig.getClientConfigJson();
     if (ContainerUtils::isAwgContainer(container) || container == DockerContainer::WireGuard) {
         if (vpnConfigData[configKey::mtu].toString().isEmpty()) {

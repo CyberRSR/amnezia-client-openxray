@@ -4,6 +4,7 @@
 #include "core/configurators/ikev2Configurator.h"
 #include "core/configurators/openVpnConfigurator.h"
 #include "core/configurators/owgConfigurator.h"
+#include "core/configurators/wwgConfigurator.h"
 #include "core/configurators/wireguardConfigurator.h"
 #include "core/configurators/xrayConfigurator.h"
 
@@ -22,6 +23,7 @@ QScopedPointer<ConfiguratorBase> ConfiguratorBase::create(Proto protocol,
     case Proto::WireGuard: return QScopedPointer<ConfiguratorBase>(new WireguardConfigurator(sshSession, false));
     case Proto::Awg: return QScopedPointer<ConfiguratorBase>(new AwgConfigurator(sshSession));
     case Proto::OWG: return QScopedPointer<ConfiguratorBase>(new OwgConfigurator(sshSession));
+    case Proto::WWG: return QScopedPointer<ConfiguratorBase>(new WwgConfigurator(sshSession));
     case Proto::Ikev2: return QScopedPointer<ConfiguratorBase>(new Ikev2Configurator(sshSession));
     case Proto::Xray: return QScopedPointer<ConfiguratorBase>(new XrayConfigurator(sshSession));
     case Proto::SSXray: return QScopedPointer<ConfiguratorBase>(new XrayConfigurator(sshSession));

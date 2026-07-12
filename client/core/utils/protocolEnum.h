@@ -23,6 +23,7 @@ namespace amnezia
             WireGuard,
             Awg,
             OWG,
+            WWG,
             Ikev2,
             Xray,
             SSXray,

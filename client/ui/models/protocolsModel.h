@@ -22,6 +22,7 @@ public:
         IsWireGuardRole,
         IsAwgRole,
         IsOwgRole,
+        IsWwgRole,
         IsOpenVpnRole,
         IsXrayRole,
         IsSftpRole,

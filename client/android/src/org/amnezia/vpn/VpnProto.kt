@@ -3,6 +3,7 @@ package org.amnezia.vpn
 import org.amnezia.vpn.protocol.Protocol
 import org.amnezia.vpn.protocol.awg.Awg
 import org.amnezia.vpn.protocol.awg.Owg
+import org.amnezia.vpn.protocol.awg.Wwg
 import org.amnezia.vpn.protocol.openvpn.OpenVpn
 import org.amnezia.vpn.protocol.wireguard.Wireguard
 import org.amnezia.vpn.protocol.xray.Oxray
@@ -35,6 +36,14 @@ enum class VpnProto(
         OwgService::class.java
     ) {
         override fun createProtocol(): Protocol = Owg()
+    },
+
+    WWG(
+        "WWG",
+        "org.amnezia.vpn:amneziaWwgService",
+        WwgService::class.java
+    ) {
+        override fun createProtocol(): Protocol = Wwg()
     },
 
     OPENVPN(

@@ -75,6 +75,7 @@
         <file>Pages2/PageHome.qml</file>
         <file>Pages2/PageProtocolAwgSettings.qml</file>
         <file>Pages2/PageProtocolOwgSettings.qml</file>
+        <file>Pages2/PageProtocolWwgSettings.qml</file>
         <file>Pages2/PageProtocolOxraySettings.qml</file>
         <file>Pages2/PageProtocolOpenVpnSettings.qml</file>
         <file>Pages2/PageProtocolRaw.qml</file>

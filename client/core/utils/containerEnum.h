@@ -14,6 +14,7 @@ namespace amnezia
             Awg,
             Awg2,
             OWG,
+            WWG,
             WireGuard,
             OpenVpn,
             Cloak,
