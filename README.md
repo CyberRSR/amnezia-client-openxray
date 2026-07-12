@@ -45,6 +45,14 @@
 - Release `v0.5` provides separate debug Android APKs for this OWG branch: `arm64-v8a` for current devices and `armeabi-v7a` for Android 8+ devices (`org.amnezia.vpn.debugx`).
 - Local Android 8 `armeabi-v7a` rebuilds use `APP_ANDROID_MIN_SDK=26` and should point `AMNEZIA_AWG_ANDROID_PREBUILT_DIR` to compatible armv7 AWG libraries, because fresh Go-built `libwg-go.so` can use time64 syscalls blocked by Android 8.
 
+## WWG branch additions
+
+- Android-only WWG chains two AmneziaWG v2 profiles without creating two Android VPN interfaces: the entry tunnel runs in the Go netstack and the exit tunnel owns the single system VPN interface.
+- WWG imports the entry `.conf` first and the exit `.conf` second. Both configs must declare AmneziaWG protocol version 2 and contain the complete v2 parameter set.
+- A serialized lifecycle monitor checks the relay continuously and probes the Android VPN network every five seconds. Two failed probe rounds trigger an unlimited full reconnect sequence.
+- Portable `.vpn` export/import preserves both AWG v2 layers. Private deployment profiles, keys, and server credentials are never part of the source tree or release artifacts.
+- See [WWG architecture and profile format](docs/WWG.md).
+
 ## Links
 
 - [https://amnezia.org](https://amnezia.org) - Project website | [Alternative link (mirror)](https://storage.googleapis.com/kldscp/amnezia.org)

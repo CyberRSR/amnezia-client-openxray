@@ -70,6 +70,15 @@ Each component is distributed under its own license as linked below.
 
 ---
 
+## gVisor netstack
+
+- Source: https://github.com/google/gvisor
+- Version: `v0.0.0-20231202080848-1f7806d17489`
+- License: Apache License 2.0
+- License Text: https://github.com/google/gvisor/blob/master/LICENSE
+
+---
+
 ## Xray Core
 
 - Source: https://github.com/XTLS/Xray-core
