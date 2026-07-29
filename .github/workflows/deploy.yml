@@ -501,7 +501,7 @@ jobs:
     - name: 'Setup xcode'
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '16.2.0'
+        xcode-version: '26.3.0'
 
     - name: 'Install Qt'
       uses: jurplel/install-qt-action@v4
@@ -531,6 +531,8 @@ jobs:
         QT_INSTALL_DIR: ${{ runner.temp }}
         CODESIGN_SIGNATURE: ${{ secrets.MAC_SIGNER_ID }}
         CODESIGN_INSTALLER_SIGNATURE: ${{ secrets.MAC_INSTALLER_SIGNER_ID }}
+        CODESIGN_KEYCHAIN: ${{ steps.setup-keychain.outputs.keychain-path }}
+        CODESIGN_INSTALLER_KEYCHAIN: ${{ steps.setup-keychain.outputs.keychain-path }}
         NOTARYTOOL_TEAM_ID: ${{ secrets.MAC_TEAM_ID }}
         NOTARYTOOL_EMAIL: ${{ secrets.APPLE_DEV_EMAIL }}
         NOTARYTOOL_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}

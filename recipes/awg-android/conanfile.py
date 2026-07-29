@@ -9,11 +9,13 @@ import platform
 
 class AwgAndroid(ConanFile):
     name = "awg-android"
-    version = "2.0.1"
+    version = "3.0.1"
     exports_sources = "patches/*"
     settings = "os", "arch", "build_type", "compiler"
 
-    _upstream_revision = "fb64e74ba5a0a54e9185b8776bcb8088afb772c9"
+    # Immutable v3.0.1 release commit.  Keeping the revision here makes the
+    # Conan recipe reproducible even if the upstream tag is moved.
+    _upstream_revision = "f82900455f1aceaa85658686dc2c5e32c2c42a73"
 
     @property
     def _source_root(self):
@@ -137,9 +139,9 @@ class AwgAndroid(ConanFile):
             raise ConanInvalidConfiguration(
                 f"AMNEZIA_AWG_ANDROID_PREBUILT_DIR does not contain {self._abi_name()} AWG libraries"
             )
-        if not os.path.isfile(os.path.join(candidate, "wwg-netstack-v2.marker")):
+        if not os.path.isfile(os.path.join(candidate, "wwg-netstack-v3.marker")):
             raise ConanInvalidConfiguration(
-                "Refusing an unverified AWG prebuilt: WWG requires v2.0.1 with netstack JNI symbols"
+                "Refusing an unverified AWG prebuilt: WWG requires v3.0.1 with netstack JNI symbols"
             )
         return candidate
 

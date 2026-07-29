@@ -651,6 +651,7 @@ void InstallUiController::validateConfig()
 {
     const QString serverId = m_serversController->getDefaultServerId();
     if (serverId.isEmpty()) {
+        emit configValidated(false);
         return;
     }
     m_installController->validateConfig(serverId);
