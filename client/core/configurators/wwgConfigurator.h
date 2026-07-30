@@ -23,6 +23,9 @@ public:
                                                             amnezia::ProtocolConfig protocolConfig) override;
 
 private:
+    static void normalize(amnezia::WwgProtocolConfig &config);
+    // Kept for source compatibility with older WWG integrations. AWG3 also
+    // uses protocol_version=2, so this no longer converts or strips a mode.
     static void forceV2(amnezia::WwgProtocolConfig &config);
 };
 

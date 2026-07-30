@@ -29,7 +29,7 @@ ProtocolConfig WwgConfigurator::processConfigWithLocalSettings(const ConnectionS
 {
     Q_UNUSED(settings);
     if (auto *config = protocolConfig.as<WwgProtocolConfig>()) {
-        forceV2(*config);
+        normalize(*config);
     }
     return protocolConfig;
 }
@@ -39,19 +39,26 @@ ProtocolConfig WwgConfigurator::processConfigWithExportSettings(const ExportSett
 {
     Q_UNUSED(settings);
     if (auto *config = protocolConfig.as<WwgProtocolConfig>()) {
-        forceV2(*config);
+        normalize(*config);
     }
     return protocolConfig;
 }
 
-void WwgConfigurator::forceV2(WwgProtocolConfig &config)
+void WwgConfigurator::normalize(WwgProtocolConfig &config)
 {
     const auto apply = [](AwgProtocolConfig &awg) {
-        awg.serverConfig.protocolVersion = protocols::awg::awgV2;
+        if (awg.serverConfig.protocolVersion.isEmpty()) {
+            awg.serverConfig.protocolVersion = protocols::awg::awgV2;
+        }
         if (awg.clientConfig.has_value()) {
             awg.clientConfig->isObfuscationEnabled = true;
         }
     };
     apply(config.underlayAwgConfig);
     apply(config.overlayAwgConfig);
+}
+
+void WwgConfigurator::forceV2(WwgProtocolConfig &config)
+{
+    normalize(config);
 }

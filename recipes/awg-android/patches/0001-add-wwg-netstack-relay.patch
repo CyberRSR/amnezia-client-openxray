@@ -372,6 +372,35 @@ index 1f52c55..c8bc180 100644
  //export awgVersion
  func awgVersion() *C.char {
  	info, ok := debug.ReadBuildInfo()
+diff --git a/tunnel/tools/libwg-go/Makefile b/tunnel/tools/libwg-go/Makefile
+index 5ab05a7..031d912 100644
+--- a/tunnel/tools/libwg-go/Makefile
++++ b/tunnel/tools/libwg-go/Makefile
+@@ -47,6 +47,6 @@ $(BUILDDIR)/go-$(GO_VERSION)/.prepared: $(GRADLE_USER_HOME)/caches/golang/$(GO_T
+ 
+ $(DESTDIR)/libwg-go.so: export PATH := $(BUILDDIR)/go-$(GO_VERSION)/bin/:$(PATH)
+ $(DESTDIR)/libwg-go.so: $(BUILDDIR)/go-$(GO_VERSION)/.prepared go.mod
+-	go build -tags linux -ldflags="-X github.com/amnezia-vpn/amneziawg-go/ipc.socketDirectory=/data/data/$(ANDROID_PACKAGE_NAME)/cache/amneziawg -buildid=" -v -trimpath -buildvcs=false -o "$@" -buildmode c-shared
++	go build -tags linux -ldflags="-X github.com/amnezia-vpn/amneziawg-go/v3/ipc.socketDirectory=/data/data/$(ANDROID_PACKAGE_NAME)/cache/amneziawg -buildid=" -v -trimpath -buildvcs=false -o "$@" -buildmode c-shared
+ 
+ .DELETE_ON_ERROR:
+diff --git a/tunnel/tools/libwg-go/go.mod b/tunnel/tools/libwg-go/go.mod
+index fe0e472..141ffae 100644
+--- a/tunnel/tools/libwg-go/go.mod
++++ b/tunnel/tools/libwg-go/go.mod
+@@ -4,6 +4,12 @@ go 1.25.0
+ 
+ require golang.org/x/sys v0.36.0
+ 
++require (
++	github.com/google/btree v1.1.3 // indirect
++	golang.org/x/time v0.9.0 // indirect
++	gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
++)
++
+ require (
+ 	github.com/amnezia-vpn/amneziawg-go/v3 v3.0.1
+ 	golang.org/x/crypto v0.42.0 // indirect
 diff --git a/tunnel/tools/libwg-go/jni.c b/tunnel/tools/libwg-go/jni.c
 index 237043e..d9dc7b2 100644
 --- a/tunnel/tools/libwg-go/jni.c

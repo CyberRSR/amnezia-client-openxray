@@ -391,18 +391,18 @@ PageType {
     QtObject {
         id: wwgFiles
 
-        property string title: qsTr("WWG (AmneziaWG v2 + AmneziaWG v2)")
-        property string description: qsTr("Create one WWG profile from entry and exit AmneziaWG v2 configs")
+        property string title: qsTr("WWG (AmneziaWG v2/v3 + AmneziaWG v2/v3)")
+        property string description: qsTr("Create one WWG profile from entry and exit configs of the same AmneziaWG mode. Use a separate pair for every device.")
         property string imageSource: "qrc:/images/controls/file-cog-2.svg"
         property bool isVisible: Qt.platform.os === "android"
         property var handler: function() {
-            var underlayFileName = SystemController.getFileName(qsTr("Open entry AmneziaWG v2 config"),
+            var underlayFileName = SystemController.getFileName(qsTr("Open entry AmneziaWG v2 or v3 config"),
                                                                  qsTr("AmneziaWG config (*.conf)"))
             if (underlayFileName === "") {
                 return
             }
 
-            var overlayFileName = SystemController.getFileName(qsTr("Open exit AmneziaWG v2 config"),
+            var overlayFileName = SystemController.getFileName(qsTr("Open exit AmneziaWG v2 or v3 config"),
                                                                 qsTr("AmneziaWG config (*.conf)"))
             if (overlayFileName === "") {
                 return

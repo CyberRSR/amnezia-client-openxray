@@ -1,0 +1,167 @@
+#include <QByteArray>
+#include <QJsonObject>
+#include <QtTest>
+
+#include "core/models/protocols/wwgProtocolConfig.h"
+#include "core/utils/constants/configKeys.h"
+#include "core/utils/constants/protocolConstants.h"
+
+using namespace amnezia;
+
+namespace
+{
+AwgProtocolConfig makeLayer(bool v3, const QString &headerProtectionKey = {})
+{
+    AwgProtocolConfig layer;
+    layer.serverConfig.protocolVersion = protocols::awg::awgV2;
+
+    AwgClientConfig client;
+    client.hostName = QStringLiteral("vpn.example.test");
+    client.port = 55425;
+    client.clientIp = QStringLiteral("10.9.1.2/32");
+    client.clientPrivateKey = QStringLiteral("client-private-key");
+    client.serverPublicKey = QStringLiteral("server-public-key");
+    client.allowedIps = { QStringLiteral("0.0.0.0/0"), QStringLiteral("::/0") };
+    client.persistentKeepAlive = QStringLiteral("25");
+    client.mtu = QStringLiteral("1280");
+    client.junkPacketCount = QStringLiteral("4");
+    client.junkPacketMinSize = QStringLiteral("10");
+    client.junkPacketMaxSize = QStringLiteral("50");
+    client.initPacketJunkSize = v3 ? QStringLiteral("8") : QStringLiteral("0");
+    client.responsePacketJunkSize = v3 ? QStringLiteral("9") : QStringLiteral("0");
+    client.cookieReplyPacketJunkSize = v3 ? QStringLiteral("10") : QStringLiteral("0");
+    client.transportPacketJunkSize = v3 ? QStringLiteral("14") : QStringLiteral("0");
+    client.initPacketMagicHeader = QStringLiteral("101");
+    client.responsePacketMagicHeader = QStringLiteral("102");
+    client.underloadPacketMagicHeader = QStringLiteral("103");
+    client.transportPacketMagicHeader = QStringLiteral("104");
+
+    if (v3) {
+        layer.serverConfig.headerProtectionKey = headerProtectionKey;
+        client.headerProtectionKey = headerProtectionKey;
+        client.contentPaddingAddition = QStringLiteral("0-16");
+        client.rekeyAfterTime = QStringLiteral("120");
+        client.rekeyTimeout = QStringLiteral("5-10");
+        client.rejectAfterTime = QStringLiteral("180");
+        client.keepaliveTimeout = QStringLiteral("15");
+        client.maxHandshakeAttempts = QStringLiteral("10");
+    }
+
+    layer.clientConfig = client;
+    return layer;
+}
+
+WwgProtocolConfig makeWwg(bool v3)
+{
+    const QString entryHpk = QString::fromLatin1(QByteArray(32, '\x5a').toBase64());
+    const QString exitHpk = QString::fromLatin1(QByteArray(32, '\x6b').toBase64());
+    WwgProtocolConfig config;
+    config.underlayAwgConfig = makeLayer(v3, entryHpk);
+    config.overlayAwgConfig = makeLayer(v3, exitHpk);
+    config.overlayAwgConfig.clientConfig->hostName = QStringLiteral("exit.example.test");
+    config.overlayAwgConfig.clientConfig->port = 35162;
+    config.overlayAwgConfig.clientConfig->clientIp = QStringLiteral("10.8.2.2/32");
+    return config;
+}
+} // namespace
+
+class WwgProtocolConfigTest : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void acceptsV2AndPreservesCompatibility()
+    {
+        const WwgProtocolConfig config = makeWwg(false);
+        QVERIFY2(config.isValidV2(), qPrintable(config.validationError()));
+        QCOMPARE(config.mode(), WwgProtocolConfig::Mode::V2);
+        QCOMPARE(config.underlayAwgConfig.serverConfig.protocolVersion, QStringLiteral("2"));
+    }
+
+    void acceptsV3AndRoundTripsAllFields()
+    {
+        const WwgProtocolConfig config = makeWwg(true);
+        QVERIFY2(config.isValidV3(), qPrintable(config.validationError()));
+        QCOMPARE(config.mode(), WwgProtocolConfig::Mode::V3);
+
+        const WwgProtocolConfig restored = WwgProtocolConfig::fromJson(config.toJson());
+        QVERIFY2(restored.isValidV3(), qPrintable(restored.validationError()));
+        QCOMPARE(restored.underlayAwgConfig.serverConfig.headerProtectionKey,
+                 config.underlayAwgConfig.serverConfig.headerProtectionKey);
+        QCOMPARE(restored.overlayAwgConfig.clientConfig->contentPaddingAddition, QStringLiteral("0-16"));
+        QCOMPARE(restored.overlayAwgConfig.clientConfig->rekeyAfterTime, QStringLiteral("120"));
+        QCOMPARE(restored.overlayAwgConfig.clientConfig->rekeyTimeout, QStringLiteral("5-10"));
+        QCOMPARE(restored.overlayAwgConfig.clientConfig->rejectAfterTime, QStringLiteral("180"));
+        QCOMPARE(restored.overlayAwgConfig.clientConfig->keepaliveTimeout, QStringLiteral("15"));
+        QCOMPARE(restored.overlayAwgConfig.clientConfig->maxHandshakeAttempts, QStringLiteral("10"));
+    }
+
+    void rejectsMixedModesAndBrokenHeaderProtectionKeys()
+    {
+        WwgProtocolConfig mixed = makeWwg(true);
+        mixed.overlayAwgConfig = makeLayer(false);
+        QVERIFY(!mixed.isValid());
+        QVERIFY(mixed.validationError().contains(QStringLiteral("cannot mix")));
+
+        WwgProtocolConfig broken = makeWwg(true);
+        broken.overlayAwgConfig.clientConfig->headerProtectionKey = QStringLiteral("not-base64");
+        QVERIFY(!broken.isValid());
+        QVERIFY(broken.validationError().contains(QStringLiteral("HeaderProtectionKey")));
+
+        WwgProtocolConfig mismatched = makeWwg(true);
+        mismatched.overlayAwgConfig.clientConfig->headerProtectionKey =
+                QString::fromLatin1(QByteArray(32, '\x33').toBase64());
+        QVERIFY(!mismatched.isValid());
+        QVERIFY(mismatched.validationError().contains(QStringLiteral("do not match")));
+    }
+
+    void rejectsInvalidV3PaddingAndRanges()
+    {
+        WwgProtocolConfig config = makeWwg(true);
+        config.underlayAwgConfig.clientConfig->transportPacketJunkSize = QStringLiteral("7");
+        QVERIFY(!config.isValid());
+        QVERIFY(config.validationError().contains(QStringLiteral("S4 >= 8")));
+
+        config = makeWwg(true);
+        config.overlayAwgConfig.clientConfig->rekeyTimeout = QStringLiteral("20-10");
+        QVERIFY(!config.isValid());
+        QVERIFY(config.validationError().contains(QStringLiteral("range")));
+    }
+
+    void acceptsOfficialOffRangeValue()
+    {
+        WwgProtocolConfig config = makeWwg(true);
+        config.underlayAwgConfig.clientConfig->contentPaddingAddition = QStringLiteral("(off)");
+        config.overlayAwgConfig.clientConfig->persistentKeepAlive = QStringLiteral("(OFF)");
+        QVERIFY2(config.isValid(), qPrintable(config.validationError()));
+    }
+
+    void omitsEmptySpecialJunkFields()
+    {
+        WwgProtocolConfig config = makeWwg(false);
+        config.underlayAwgConfig.serverConfig.specialJunk1 = QStringLiteral("  ");
+        config.underlayAwgConfig.clientConfig->specialJunk1 = QStringLiteral("\t");
+        const QJsonObject serverJson = config.underlayAwgConfig.serverConfig.toJson();
+        const QJsonObject clientJson = config.underlayAwgConfig.clientConfig->toJson();
+
+        QVERIFY(!serverJson.contains(configKey::specialJunk1));
+        QVERIFY(!serverJson.contains(configKey::specialJunk5));
+        QVERIFY(!clientJson.contains(configKey::specialJunk1));
+        QVERIFY(!clientJson.contains(configKey::specialJunk5));
+    }
+
+    void comparesAllAwg3ServerSettings()
+    {
+        AwgServerConfig baseline = makeLayer(true,
+                QString::fromLatin1(QByteArray(32, '\x5a').toBase64())).serverConfig;
+        AwgServerConfig changed = baseline;
+        QVERIFY(baseline.hasEqualServerSettings(changed));
+
+        changed.rekeyTimeout = QStringLiteral("9-12");
+        QVERIFY(!baseline.hasEqualServerSettings(changed));
+    }
+};
+
+QTEST_APPLESS_MAIN(WwgProtocolConfigTest)
+
+#include "test_wwg_protocol_config.moc"

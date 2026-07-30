@@ -308,21 +308,22 @@ QJsonObject ConnectionController::createConnectionConfiguration(const QPair<QStr
 
     if (container == DockerContainer::WWG) {
         const auto *wwgConfig = processedConfig.as<WwgProtocolConfig>();
-        if (!wwgConfig || !wwgConfig->hasClientConfig() || !wwgConfig->isValidV2()) {
+        if (!wwgConfig || !wwgConfig->hasClientConfig() || !wwgConfig->isValid()) {
             return vpnConfiguration;
         }
 
-        const auto prepareAwgV2 = [](QJsonObject config) {
+        const auto prepareAwg = [](QJsonObject config) {
             if (config.value(configKey::mtu).toString().isEmpty()) {
                 config[configKey::mtu] = protocols::awg::defaultMtu;
             }
+            // AWG3 deliberately retains the AWG protocol_version value "2".
             config[configKey::protocolVersion] = protocols::awg::awgV2;
             config[configKey::isObfuscationEnabled] = true;
             return config;
         };
 
-        const QJsonObject underlay = prepareAwgV2(wwgConfig->underlayClientConfigJson());
-        const QJsonObject overlay = prepareAwgV2(wwgConfig->overlayClientConfigJson());
+        const QJsonObject underlay = prepareAwg(wwgConfig->underlayClientConfigJson());
+        const QJsonObject overlay = prepareAwg(wwgConfig->overlayClientConfigJson());
         vpnConfiguration.insert(configKey::awgUnderlayConfigData, underlay);
         vpnConfiguration.insert(configKey::awgOverlayConfigData, overlay);
         vpnConfiguration[configKey::vpnProto] = QStringLiteral("WWG");

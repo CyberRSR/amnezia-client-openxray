@@ -17,4 +17,5 @@ dependencies {
     compileOnly(project(":openvpn"))
     implementation(project(":wireguard"))
     implementation(libs.kotlinx.coroutines)
+    testImplementation("junit:junit:4.13.2")
 }

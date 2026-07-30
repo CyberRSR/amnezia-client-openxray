@@ -1,9 +1,11 @@
 from conan import ConanFile
 from conan.tools.cmake import cmake_layout, CMake, CMakeToolchain
-from conan.tools.files import copy, replace_in_file, save, patch
+from conan.tools.env import Environment
+from conan.tools.files import copy, load, replace_in_file, save, patch
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.scm import Git
 
+import json
 import os
 import platform
 
@@ -58,6 +60,14 @@ class AwgAndroid(ConanFile):
         tc = CMakeToolchain(self)
         tc.variables["GRADLE_USER_HOME"] = os.path.join(self.build_folder, "gradle_user_home").replace(os.sep, "/")
         tc.variables["CMAKE_LIBRARY_OUTPUT_DIRECTORY"] = os.path.join(self.build_folder, "out").replace(os.sep, "/")
+        # The upstream Makefile embeds the Android UAPI socket directory at
+        # link time.  Conan builds do not inherit this value from Gradle, so an
+        # unset variable would silently produce /data/data//cache/amneziawg.
+        tc.variables["ANDROID_PACKAGE_NAME"] = (
+            "org.amnezia.vpn.debugx"
+            if str(self.settings.build_type) == "Debug"
+            else "org.amnezia.vpn"
+        )
         # not to warn in case of strtok() usage
         tc.extra_cflags = ["-Wno-deprecated-declarations"]
         tc.generate()
@@ -145,13 +155,48 @@ class AwgAndroid(ConanFile):
             )
         return candidate
 
+    def _android_armv7_go_overlay(self):
+        if str(self.settings.arch) != "armv7":
+            return None
+
+        # Go 1.24+ probes futex_time64 before falling back to the legacy futex
+        # syscall on 32-bit Linux. Android 8 seccomp kills the process instead
+        # of returning ENOSYS (golang/go#77930), so the fallback is never
+        # reached. Keep the current AWG3 dependency/toolchain versions and
+        # disable only that probe for the Android armv7 build.
+        go_root = self.dependencies.build["go"].package_folder
+        runtime_source = os.path.join(go_root, "src", "runtime", "os_linux32.go")
+        contents = load(self, runtime_source)
+        target = "if !isFutexTime32bitOnly.Load() {"
+        replacement = "if false && !isFutexTime32bitOnly.Load() {"
+        if contents.count(target) != 1:
+            raise ConanInvalidConfiguration(
+                "Unable to apply the Android 8 armv7 futex compatibility overlay"
+            )
+
+        overlay_dir = os.path.join(self.build_folder, "go_android_armv7_overlay")
+        patched_source = os.path.join(overlay_dir, "os_linux32.go")
+        overlay_file = os.path.join(overlay_dir, "overlay.json")
+        save(self, patched_source, contents.replace(target, replacement))
+        save(self, overlay_file, json.dumps({
+            "Replace": {
+                runtime_source.replace(os.sep, "/"): patched_source.replace(os.sep, "/")
+            }
+        }, indent=2))
+        return overlay_file.replace(os.sep, "/")
+
     def build(self):
         if self._prebuilt_dir():
             return
         self._patch_sources()
+        build_env = Environment()
+        go_overlay = self._android_armv7_go_overlay()
+        if go_overlay:
+            build_env.append("GOFLAGS", f"-overlay={go_overlay}")
         cmake = CMake(self)
-        cmake.configure(build_script_folder=os.path.join(self._source_root, "tunnel", "tools"))
-        cmake.build(target=["libwg-go.so", "libwg.so", "libwg-quick.so"])
+        with build_env.vars(self).apply():
+            cmake.configure(build_script_folder=os.path.join(self._source_root, "tunnel", "tools"))
+            cmake.build(target=["libwg-go.so", "libwg.so", "libwg-quick.so"])
 
     def package(self):
         prebuilt_dir = self._prebuilt_dir()

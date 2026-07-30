@@ -7,9 +7,11 @@ import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.net.VpnService.Builder
 import android.os.SystemClock
-import java.net.HttpURLConnection
-import java.net.URL
+import android.util.Base64
+import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +49,8 @@ import org.amnezia.vpn.util.LibraryLoader.loadSharedLibrary
 import org.amnezia.vpn.util.Log
 import org.json.JSONException
 import org.json.JSONObject
+import kotlin.math.max
+import kotlin.random.Random
 
 private const val TAG = "Wwg"
 private const val UNDERLAY_CONFIG_DATA = "awg_underlay_config_data"
@@ -56,24 +61,82 @@ private const val AWG_V2 = "2"
 private const val UNDERLAY_IF_NAME = "wwg0"
 private const val OVERLAY_IF_NAME = "wwg1"
 private const val RELAY_HOST = "127.0.0.1"
+private const val HEADER_PROTECTION_KEY = "HeaderProtectionKey"
 
 private const val AWG_HANDSHAKE_TIMEOUT_MS = 45_000L
 private const val MONITOR_TICK_MS = 1_000L
-private const val HTTP_PROBE_INTERVAL_MS = 5_000L
-private const val HTTP_PROBE_TIMEOUT_MS = 2_000
+private const val HEALTH_PROBE_INTERVAL_MS = 5_000L
+private const val HEALTH_PROBE_TIMEOUT_MS = 2_000
 private const val INITIAL_VPN_NETWORK_TIMEOUT_MS = 10_000L
-private const val FIRST_RETRY_DELAY_MS = 5_000L
-private const val NEXT_RETRY_DELAY_MS = 10_000L
+private const val STABLE_CONNECTION_RESET_MS = 120_000L
+private const val HEALTH_EVENT_LOG_INTERVAL_MS = 60_000L
+private const val RETRY_JITTER_PERCENT = 10
 
-private val HEALTHCHECK_URLS = listOf(
-    // Literal IPs keep DNS stalls from stretching a five-second monitor round.
-    "https://1.1.1.1/cdn-cgi/trace",
-    "https://8.8.8.8/generate_204"
+private val RETRY_BACKOFF_MS = longArrayOf(5_000L, 15_000L, 30_000L, 60_000L, 120_000L)
+private val AWG_V3_RANGE_FIELDS = listOf(
+    "ContentPaddingAddition",
+    "RekeyAfterTime",
+    "RekeyTimeout",
+    "RejectAfterTime",
+    "KeepaliveTimeout",
+    "MaxHandshakeAttempts",
+)
+private val AWG_V3_FIELDS = listOf(HEADER_PROTECTION_KEY) + AWG_V3_RANGE_FIELDS
+
+private data class HealthCheckTarget(
+    val host: String,
+    val port: Int,
 )
 
+private val HEALTHCHECK_TARGETS = listOf(
+    // Literal IPs keep DNS and HTTP/TLS failures from stretching a five-second
+    // VPN-bound reachability round.
+    HealthCheckTarget("1.1.1.1", 443),
+    HealthCheckTarget("8.8.8.8", 53),
+)
+
+private data class HealthCheckResult(
+    val successCount: Int,
+    val totalCount: Int,
+    val networkFound: Boolean,
+) {
+    val isUsable: Boolean get() = successCount > 0
+}
+
+internal data class WwgRetryDelay(
+    val attempt: Int,
+    val delayMs: Long,
+)
+
+internal class WwgRetryPolicy(
+    private val backoffMs: LongArray = RETRY_BACKOFF_MS,
+    private val jitterPercent: Int = RETRY_JITTER_PERCENT,
+    private val randomLong: (Long, Long) -> Long = { from, until -> Random.nextLong(from, until) },
+) {
+    private val attempt = AtomicInteger(0)
+
+    init {
+        require(backoffMs.isNotEmpty()) { "WWG retry backoff must not be empty" }
+        require(jitterPercent in 0..100) { "WWG retry jitter must be between 0 and 100 percent" }
+    }
+
+    val currentAttempt: Int
+        get() = attempt.get()
+
+    fun reset(): Boolean = attempt.getAndSet(0) != 0
+
+    fun nextDelay(): WwgRetryDelay {
+        val nextAttempt = attempt.incrementAndGet()
+        val baseDelay = backoffMs[minOf(nextAttempt - 1, backoffMs.lastIndex)]
+        val jitterLimit = if (jitterPercent == 0) 0L else max(1L, baseDelay * jitterPercent / 100)
+        val jitter = if (jitterLimit == 0L) 0L else randomLong(-jitterLimit, jitterLimit + 1)
+        return WwgRetryDelay(nextAttempt, max(0L, baseDelay + jitter))
+    }
+}
+
 /**
- * WWG keeps the entry AWG v2 tunnel in the official Go netstack and exposes a
- * loopback UDP relay. The exit AWG v2 tunnel is the only Android VpnService TUN.
+ * WWG keeps the entry AWG v2/v3 tunnel in the official Go netstack and exposes
+ * a loopback UDP relay. The exit AWG tunnel is the only Android VpnService TUN.
  */
 class Wwg : Protocol() {
 
@@ -81,6 +144,8 @@ class Wwg : Protocol() {
     private val overlayState = MutableStateFlow(UNKNOWN)
     private val connectionCheckRequests = Channel<Unit>(Channel.CONFLATED)
     private val closingChain = AtomicBoolean(false)
+    private val retryPolicy = WwgRetryPolicy()
+    private val restartRequestedGeneration = AtomicLong(-1L)
 
     private lateinit var scope: CoroutineScope
     private var sourceConfig: JSONObject? = null
@@ -90,6 +155,8 @@ class Wwg : Protocol() {
     private var monitorJob: Job? = null
     private var restartJob: Job? = null
     private var generation = 0L
+    private var connectedAtElapsed = 0L
+    private val healthEventLogTimes = mutableMapOf<String, Long>()
 
     @Volatile
     private var stopping = true
@@ -121,6 +188,12 @@ class Wwg : Protocol() {
             // Drop wake requests left by the previous service generation.
         }
         overlayState.value = UNKNOWN
+        retryPolicy.reset()
+        restartRequestedGeneration.set(-1L)
+        connectedAtElapsed = 0L
+        synchronized(healthEventLogTimes) {
+            healthEventLogTimes.clear()
+        }
         stopping = false
     }
 
@@ -133,6 +206,7 @@ class Wwg : Protocol() {
         lifecycleMutex.withLock {
             generation += 1
             val currentGeneration = generation
+            restartRequestedGeneration.set(-1L)
             closeChainLocked()
             startWithRetryLocked(JSONObject(config.toString()), currentGeneration, vpnBuilder)
         }
@@ -141,6 +215,8 @@ class Wwg : Protocol() {
     override fun stopVpn() {
         stopping = true
         generation += 1
+        restartRequestedGeneration.set(-1L)
+        connectedAtElapsed = 0L
         if (this::scope.isInitialized) {
             scope.cancel()
         }
@@ -166,14 +242,20 @@ class Wwg : Protocol() {
     }
 
     private suspend fun startWithRetryLocked(config: JSONObject, expectedGeneration: Long, initialBuilder: Builder?) {
-        var attempt = 0
+        var useInitialBuilder = initialBuilder != null
         while (currentCoroutineContext().isActive && !stopping && generation == expectedGeneration) {
             try {
-                val builder = if (attempt == 0 && initialBuilder != null) initialBuilder else newVpnBuilder()
+                val builder = if (useInitialBuilder) initialBuilder!! else newVpnBuilder()
+                useInitialBuilder = false
                 startChainLocked(config, builder, expectedGeneration)
                 state.value = CONNECTED
+                connectedAtElapsed = SystemClock.elapsedRealtime()
                 launchMonitor(expectedGeneration)
-                Log.i(TAG, "WWG generation $expectedGeneration connected")
+                Log.i(
+                    TAG,
+                    "WWG_EVENT event=connected generation=$expectedGeneration " +
+                        "retryAttempt=${retryPolicy.currentAttempt}"
+                )
                 return
             } catch (e: CancellationException) {
                 closeChainLocked()
@@ -181,14 +263,21 @@ class Wwg : Protocol() {
             } catch (e: Exception) {
                 closeChainLocked()
                 if (isFatalConfigurationError(e)) {
-                    Log.e(TAG, "Fatal WWG start error: ${e.message ?: e}")
+                    Log.e(
+                        TAG,
+                        "WWG_EVENT event=fatal_start_error generation=$expectedGeneration " +
+                            "reason=${logValue(e.message ?: e.toString())}"
+                    )
                     throw e
                 }
 
-                attempt += 1
                 state.value = RECONNECTING
-                val retryDelay = if (attempt == 1) FIRST_RETRY_DELAY_MS else NEXT_RETRY_DELAY_MS
-                Log.w(TAG, "WWG transient start failure; retry in ${retryDelay / 1000}s: ${e.message ?: e}")
+                val (attempt, retryDelay) = retryPolicy.nextDelay()
+                Log.w(
+                    TAG,
+                    "WWG_EVENT event=start_retry generation=$expectedGeneration attempt=$attempt " +
+                        "delayMs=$retryDelay reason=${logValue(e.message ?: e.toString())}"
+                )
                 delay(retryDelay)
             }
         }
@@ -241,7 +330,7 @@ class Wwg : Protocol() {
         currentOverlay.startVpn(relayedConfig, vpnBuilder, protectSockets ?: ::rejectProtection)
         waitForState(overlayState, CONNECTED, AWG_HANDSHAKE_TIMEOUT_MS, "WWG overlay handshake timeout")
 
-        if (!healthCheck(INITIAL_VPN_NETWORK_TIMEOUT_MS)) {
+        if (!healthCheck(INITIAL_VPN_NETWORK_TIMEOUT_MS, expectedGeneration).isUsable) {
             throw VpnStartException("WWG VPN-bound health check failed")
         }
     }
@@ -249,8 +338,8 @@ class Wwg : Protocol() {
     private fun launchMonitor(expectedGeneration: Long) {
         monitorJob?.cancel()
         monitorJob = scope.launch {
-            var failedProbeRounds = 0
-            var nextHttpProbeAt = SystemClock.elapsedRealtime() + HTTP_PROBE_INTERVAL_MS
+            var failedFullProbeRounds = 0
+            var nextHealthProbeAt = SystemClock.elapsedRealtime() + HEALTH_PROBE_INTERVAL_MS
 
             while (isActive && !stopping && generation == expectedGeneration) {
                 val requested = withTimeoutOrNull(MONITOR_TICK_MS) {
@@ -260,49 +349,101 @@ class Wwg : Protocol() {
 
                 val handle = underlayHandle
                 if (handle < 0 || !GoBackend.awgIsRelayHealthy(handle)) {
-                    Log.e(TAG, "WWG relay fatal health failure")
+                    Log.e(
+                        TAG,
+                        "WWG_EVENT event=health_failure generation=$expectedGeneration " +
+                            "scope=relay reason=relay_unhealthy"
+                    )
                     scheduleRestart("netstack relay failed", expectedGeneration)
                     return@launch
                 }
 
                 val now = SystemClock.elapsedRealtime()
-                if (!requested && now < nextHttpProbeAt) {
+                if (connectedAtElapsed > 0L
+                    && now - connectedAtElapsed >= STABLE_CONNECTION_RESET_MS
+                    && retryPolicy.reset()
+                ) {
+                    Log.i(
+                        TAG,
+                        "WWG_EVENT event=backoff_reset generation=$expectedGeneration " +
+                            "stableMs=${now - connectedAtElapsed}"
+                    )
+                }
+                if (!requested && now < nextHealthProbeAt) {
                     continue
                 }
-                nextHttpProbeAt = now + HTTP_PROBE_INTERVAL_MS
+                nextHealthProbeAt = now + HEALTH_PROBE_INTERVAL_MS
 
-                if (healthCheck(0)) {
-                    failedProbeRounds = 0
-                } else {
-                    failedProbeRounds += 1
-                    Log.w(TAG, "WWG VPN-bound probe failed ($failedProbeRounds/2)")
-                    if (failedProbeRounds >= 2) {
-                        scheduleRestart("two consecutive VPN-bound probes failed", expectedGeneration)
-                        return@launch
+                val result = healthCheck(0, expectedGeneration)
+                when {
+                    result.successCount == result.totalCount -> {
+                        failedFullProbeRounds = 0
                     }
+                    result.successCount > 0 -> {
+                        failedFullProbeRounds = 0
+                        if (shouldLogHealthEvent(
+                                "partial:$expectedGeneration:${result.successCount}/${result.totalCount}",
+                                now
+                            )
+                        ) {
+                            Log.w(
+                                TAG,
+                                "WWG_EVENT event=health_partial generation=$expectedGeneration " +
+                                    "success=${result.successCount} total=${result.totalCount}"
+                            )
+                        }
+                    }
+                    else -> {
+                        failedFullProbeRounds += 1
+                        Log.w(
+                            TAG,
+                            "WWG_EVENT event=health_failure generation=$expectedGeneration " +
+                                "scope=vpn round=$failedFullProbeRounds/2 " +
+                                "networkFound=${result.networkFound}"
+                        )
+                    }
+                }
+                if (failedFullProbeRounds >= 2) {
+                    scheduleRestart("two consecutive full VPN-bound probe rounds failed", expectedGeneration)
+                    return@launch
                 }
             }
         }
     }
 
     private fun scheduleRestart(reason: String, expectedGeneration: Long) {
-        if (stopping || generation != expectedGeneration || restartJob?.isActive == true) {
+        if (stopping || generation != expectedGeneration
+            || !restartRequestedGeneration.compareAndSet(-1L, expectedGeneration)
+        ) {
             return
         }
 
         restartJob = scope.launch {
-            lifecycleMutex.withLock {
-                if (stopping || generation != expectedGeneration) {
-                    return@withLock
-                }
+            try {
+                lifecycleMutex.withLock {
+                    if (stopping || generation != expectedGeneration) {
+                        return@withLock
+                    }
 
-                val config = sourceConfig ?: return@withLock
-                generation += 1
-                val restartGeneration = generation
-                state.value = RECONNECTING
-                Log.w(TAG, "WWG restart generation $restartGeneration: $reason")
-                closeChainLocked()
-                startWithRetryLocked(JSONObject(config.toString()), restartGeneration, null)
+                    val config = sourceConfig ?: return@withLock
+                    val (attempt, retryDelay) = retryPolicy.nextDelay()
+                    generation += 1
+                    val restartGeneration = generation
+                    connectedAtElapsed = 0L
+                    state.value = RECONNECTING
+                    Log.w(
+                        TAG,
+                        "WWG_EVENT event=restart generation=$restartGeneration " +
+                            "sourceGeneration=$expectedGeneration attempt=$attempt delayMs=$retryDelay " +
+                            "reason=${logValue(reason)}"
+                    )
+                    closeChainLocked()
+                    delay(retryDelay)
+                    restartRequestedGeneration.compareAndSet(expectedGeneration, -1L)
+                    startWithRetryLocked(JSONObject(config.toString()), restartGeneration, null)
+                }
+            } finally {
+                restartRequestedGeneration.compareAndSet(expectedGeneration, -1L)
             }
         }
     }
@@ -315,11 +456,18 @@ class Wwg : Protocol() {
         scheduleRestart("overlay error: $message", expectedGeneration)
     }
 
-    private fun closeChainLocked() {
+    private suspend fun closeChainLocked() {
         closingChain.set(true)
         try {
-            monitorJob?.cancel()
+            val monitor = monitorJob
             monitorJob = null
+            if (monitor != null) {
+                if (monitor === currentCoroutineContext()[Job]) {
+                    monitor.cancel()
+                } else {
+                    monitor.cancelAndJoin()
+                }
+            }
 
             // Required teardown order: overlay -> relay -> underlay.
             runCatching { overlay?.stopVpn() }
@@ -371,9 +519,16 @@ class Wwg : Protocol() {
         }
     }
 
-    private suspend fun healthCheck(networkWaitMs: Long): Boolean = withContext(Dispatchers.IO) {
-        val network = findVpnNetwork(networkWaitMs) ?: return@withContext false
-        HEALTHCHECK_URLS.any { url -> probe(network, url) }
+    private suspend fun healthCheck(
+        networkWaitMs: Long,
+        expectedGeneration: Long
+    ): HealthCheckResult = withContext(Dispatchers.IO) {
+        val network = findVpnNetwork(networkWaitMs)
+            ?: return@withContext HealthCheckResult(0, HEALTHCHECK_TARGETS.size, false)
+        val successes = HEALTHCHECK_TARGETS.count { target ->
+            probe(network, target, expectedGeneration)
+        }
+        HealthCheckResult(successes, HEALTHCHECK_TARGETS.size, true)
     }
 
     private suspend fun findVpnNetwork(waitMs: Long): Network? {
@@ -392,30 +547,56 @@ class Wwg : Protocol() {
         return null
     }
 
-    private fun probe(network: Network, url: String): Boolean = try {
-        val connection = network.openConnection(URL(url)) as HttpURLConnection
-        connection.connectTimeout = HTTP_PROBE_TIMEOUT_MS
-        connection.readTimeout = HTTP_PROBE_TIMEOUT_MS
-        connection.instanceFollowRedirects = false
-        connection.useCaches = false
-        connection.requestMethod = "GET"
-        val code = connection.responseCode
-        connection.disconnect()
-        code in 200..399
+    private fun probe(network: Network, target: HealthCheckTarget, expectedGeneration: Long): Boolean = try {
+        network.socketFactory.createSocket().use { socket ->
+            socket.connect(InetSocketAddress(target.host, target.port), HEALTH_PROBE_TIMEOUT_MS)
+        }
+        true
     } catch (e: Exception) {
-        Log.w(TAG, "WWG VPN-bound probe failed for $url: ${e.message ?: e}")
+        val now = SystemClock.elapsedRealtime()
+        if (shouldLogHealthEvent(
+                "probe:$expectedGeneration:${target.host}:${target.port}",
+                now
+            )
+        ) {
+            Log.w(
+                TAG,
+                "WWG_EVENT event=probe_failure generation=$expectedGeneration " +
+                    "target=${target.host} transport=tcp port=${target.port} " +
+                    "reason=${logValue(e.message ?: e.toString())}"
+            )
+        }
         false
     }
 
-    private fun validateConfig(config: JSONObject) {
-        if (!config.has(UNDERLAY_CONFIG_DATA) || !config.has(OVERLAY_CONFIG_DATA)) {
-            throw BadConfigException("WWG requires underlay and overlay AmneziaWG v2 configs")
+    private fun shouldLogHealthEvent(key: String, now: Long): Boolean = synchronized(healthEventLogTimes) {
+        val previous = healthEventLogTimes[key]
+        if (previous != null && now - previous < HEALTH_EVENT_LOG_INTERVAL_MS) {
+            return@synchronized false
         }
-        validateLayer(config.getJSONObject(UNDERLAY_CONFIG_DATA), "underlay")
-        validateLayer(config.getJSONObject(OVERLAY_CONFIG_DATA), "overlay")
+        healthEventLogTimes[key] = now
+        true
     }
 
-    private fun validateLayer(config: JSONObject, name: String) {
+    private fun logValue(value: String): String =
+        value.replace(Regex("[\\r\\n\\s]+"), "_").take(240)
+
+    private fun validateConfig(config: JSONObject) {
+        if (!config.has(UNDERLAY_CONFIG_DATA) || !config.has(OVERLAY_CONFIG_DATA)) {
+            throw BadConfigException("WWG requires underlay and overlay AmneziaWG configs")
+        }
+        val underlay = config.getJSONObject(UNDERLAY_CONFIG_DATA)
+        val overlay = config.getJSONObject(OVERLAY_CONFIG_DATA)
+        val underlayV3 = usesAwgV3(underlay)
+        val overlayV3 = usesAwgV3(overlay)
+        if (underlayV3 != overlayV3) {
+            throw BadConfigException("WWG cannot mix AmneziaWG v2 and v3 layers")
+        }
+        validateLayer(underlay, "underlay", underlayV3)
+        validateLayer(overlay, "overlay", overlayV3)
+    }
+
+    private fun validateLayer(config: JSONObject, name: String, isV3: Boolean) {
         if (config.optString(PROTOCOL_VERSION) != AWG_V2) {
             throw BadConfigException("WWG $name protocol_version must be 2")
         }
@@ -439,6 +620,52 @@ class Wwg : Protocol() {
         if (mtu == null || mtu !in 576..1500) {
             throw BadConfigException("WWG $name has an invalid MTU")
         }
+
+        if (isV3) {
+            val headerProtectionKey = config.optString(HEADER_PROTECTION_KEY).trim()
+            if (!isValidHeaderProtectionKey(headerProtectionKey)) {
+                throw BadConfigException("WWG $name has an invalid 32-byte HeaderProtectionKey")
+            }
+            for (padding in listOf("S1", "S2", "S3", "S4")) {
+                val value = config.optString(padding).toIntOrNull()
+                if (value == null || value < 8) {
+                    throw BadConfigException("WWG $name AmneziaWG v3 requires $padding >= 8")
+                }
+            }
+            for (field in AWG_V3_RANGE_FIELDS + "persistent_keep_alive") {
+                val value = config.optString(field).trim()
+                if (!isValidUint32Range(value)) {
+                    throw BadConfigException("WWG $name has an invalid $field range")
+                }
+            }
+        }
+    }
+
+    private fun usesAwgV3(config: JSONObject): Boolean =
+        AWG_V3_FIELDS.any { field -> config.optString(field).isNotBlank() }
+
+    private fun isValidHeaderProtectionKey(value: String): Boolean = try {
+        val decoded = Base64.decode(value, Base64.DEFAULT)
+        decoded.size == 32
+            && Base64.encodeToString(decoded, Base64.NO_WRAP).trimEnd('=') == value.trim().trimEnd('=')
+    } catch (_: IllegalArgumentException) {
+        false
+    }
+
+    private fun isValidUint32Range(value: String): Boolean {
+        if (value.isEmpty()) {
+            return true
+        }
+        if (value.equals("(off)", ignoreCase = true)) {
+            return true
+        }
+        val parts = value.split('-')
+        if (parts.size !in 1..2 || parts.any { it.isEmpty() }) {
+            return false
+        }
+        val lo = parts[0].toLongOrNull() ?: return false
+        val hi = if (parts.size == 2) parts[1].toLongOrNull() ?: return false else lo
+        return lo in 0L..0xFFFF_FFFFL && hi in lo..0xFFFF_FFFFL
     }
 
     private fun isFatalConfigurationError(error: Exception): Boolean =

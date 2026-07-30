@@ -49,7 +49,8 @@ bool WwgConfigModel::setData(const QModelIndex &index, const QVariant &value, in
     default: return false;
     }
 
-    emit dataChanged(index, index, { role, ValidV2Role });
+    emit dataChanged(index, index,
+                     { role, ValidV2Role, ValidV3Role, ValidRole, ModeRole, ValidationErrorRole });
     return true;
 }
 
@@ -69,6 +70,10 @@ QVariant WwgConfigModel::data(const QModelIndex &index, int role) const
     case OverlayPortRole: return overlay.port;
     case OverlayMtuRole: return overlay.mtu;
     case ValidV2Role: return isValidV2();
+    case ValidV3Role: return isValidV3();
+    case ValidRole: return isValid();
+    case ModeRole: return mode();
+    case ValidationErrorRole: return validationError();
     default: return {};
     }
 }
@@ -96,10 +101,33 @@ bool WwgConfigModel::isValidV2() const
     return m_protocolConfig.isValidV2();
 }
 
+bool WwgConfigModel::isValid() const
+{
+    return m_protocolConfig.isValid();
+}
+
+bool WwgConfigModel::isValidV3() const
+{
+    return m_protocolConfig.isValidV3();
+}
+
+QString WwgConfigModel::mode() const
+{
+    return m_protocolConfig.modeName();
+}
+
+QString WwgConfigModel::validationError() const
+{
+    return m_protocolConfig.validationError();
+}
+
 void WwgConfigModel::applyDefaults()
 {
     const auto apply = [](AwgProtocolConfig &config) {
-        config.serverConfig.protocolVersion = protocols::awg::awgV2;
+        if (config.serverConfig.protocolVersion.isEmpty()) {
+            // Both AWG2 and AWG3 intentionally use protocol_version=2.
+            config.serverConfig.protocolVersion = protocols::awg::awgV2;
+        }
         if (!config.clientConfig.has_value()) {
             config.clientConfig = AwgClientConfig {};
         }
@@ -126,5 +154,9 @@ QHash<int, QByteArray> WwgConfigModel::roleNames() const
         { OverlayPortRole, "overlayPort" },
         { OverlayMtuRole, "overlayMtu" },
         { ValidV2Role, "validV2" },
+        { ValidV3Role, "validV3" },
+        { ValidRole, "valid" },
+        { ModeRole, "modeName" },
+        { ValidationErrorRole, "validationError" },
     };
 }

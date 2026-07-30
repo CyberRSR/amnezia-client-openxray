@@ -129,11 +129,11 @@ open class Wireguard : Protocol() {
         configData.optStringOrNull("H2")?.trim()?.let { if (it.isNotEmpty()) setH2(it) }
         configData.optStringOrNull("H3")?.trim()?.let { if (it.isNotEmpty()) setH3(it) }
         configData.optStringOrNull("H4")?.trim()?.let { if (it.isNotEmpty()) setH4(it) }
-        configData.optStringOrNull("I1")?.let { setI1(it) }
-        configData.optStringOrNull("I2")?.let { setI2(it) }
-        configData.optStringOrNull("I3")?.let { setI3(it) }
-        configData.optStringOrNull("I4")?.let { setI4(it) }
-        configData.optStringOrNull("I5")?.let { setI5(it) }
+        configData.optStringOrNull("I1")?.trim()?.takeIf { it.isNotEmpty() }?.let { setI1(it) }
+        configData.optStringOrNull("I2")?.trim()?.takeIf { it.isNotEmpty() }?.let { setI2(it) }
+        configData.optStringOrNull("I3")?.trim()?.takeIf { it.isNotEmpty() }?.let { setI3(it) }
+        configData.optStringOrNull("I4")?.trim()?.takeIf { it.isNotEmpty() }?.let { setI4(it) }
+        configData.optStringOrNull("I5")?.trim()?.takeIf { it.isNotEmpty() }?.let { setI5(it) }
         configData.optStringOrNull("HeaderProtectionKey")?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { setHeaderProtectionKey(it.base64ToHex()) }
         configData.optStringOrNull("ContentPaddingAddition")?.trim()?.takeIf { it.isNotEmpty() }

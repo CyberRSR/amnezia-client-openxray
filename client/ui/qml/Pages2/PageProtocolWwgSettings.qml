@@ -43,7 +43,7 @@ PageType {
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
                 headerText: qsTr("WWG settings")
-                descriptionText: qsTr("Two AmneziaWG v2 layers. The entry layer reaches only the exit endpoint; the exit layer owns the Android VPN interface.")
+                descriptionText: qsTr("Two %1 layers. The entry layer reaches only the exit endpoint; the exit layer owns the Android VPN interface.").arg(modeName)
             }
 
             ParagraphTextType {
@@ -51,9 +51,29 @@ PageType {
                 Layout.topMargin: 16
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                visible: !validV2
+                color: AmneziaStyle.color.paleGray
+                text: qsTr("Mode: %1. AWG3 keeps protocol_version=2 and is detected by its header-protection fields.").arg(modeName)
+            }
+
+            ParagraphTextType {
+                Layout.fillWidth: true
+                Layout.topMargin: 16
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                visible: !valid
                 color: AmneziaStyle.color.vibrantRed
-                text: qsTr("Both layers must be valid AmneziaWG v2 profiles. Re-import the two .conf files if validation fails.")
+                text: validationError.length > 0
+                      ? validationError
+                      : qsTr("Both layers must use the same valid AmneziaWG mode. Re-import the two .conf files if validation fails.")
+            }
+
+            ParagraphTextType {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                color: AmneziaStyle.color.goldenApricot
+                text: qsTr("Use one WWG profile per device. Reusing one key and tunnel IP on several devices causes endpoint competition and reconnects.")
             }
 
             Header2Type {
@@ -61,7 +81,7 @@ PageType {
                 Layout.topMargin: 24
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                headerText: qsTr("Entry AmneziaWG v2")
+                headerText: qsTr("Entry %1").arg(modeName)
             }
 
             TextFieldWithHeaderType {
@@ -111,7 +131,7 @@ PageType {
                 Layout.topMargin: 32
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                headerText: qsTr("Exit AmneziaWG v2")
+                headerText: qsTr("Exit %1").arg(modeName)
             }
 
             TextFieldWithHeaderType {
@@ -162,7 +182,7 @@ PageType {
                 Layout.bottomMargin: 24
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                enabled: validV2
+                enabled: valid
                          && underlayHostField.errorText === ""
                          && underlayPortField.errorText === ""
                          && underlayMtuField.errorText === ""

@@ -20,6 +20,10 @@ public:
         OverlayPortRole,
         OverlayMtuRole,
         ValidV2Role,
+        ValidV3Role,
+        ValidRole,
+        ModeRole,
+        ValidationErrorRole,
     };
 
     explicit WwgConfigModel(QObject *parent = nullptr);
@@ -31,7 +35,11 @@ public:
 public slots:
     void updateModel(amnezia::DockerContainer container, const amnezia::WwgProtocolConfig &protocolConfig);
     QJsonObject getConfig();
+    bool isValid() const;
     bool isValidV2() const;
+    bool isValidV3() const;
+    QString mode() const;
+    QString validationError() const;
 
 protected:
     QHash<int, QByteArray> roleNames() const override;

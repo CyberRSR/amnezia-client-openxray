@@ -68,11 +68,21 @@ QJsonObject AwgServerConfig::toJson() const
         obj[configKey::transportPacketMagicHeader] = transportPacketMagicHeader;
     }
     
-    obj[configKey::specialJunk1] = specialJunk1;
-    obj[configKey::specialJunk2] = specialJunk2;
-    obj[configKey::specialJunk3] = specialJunk3;
-    obj[configKey::specialJunk4] = specialJunk4;
-    obj[configKey::specialJunk5] = specialJunk5;
+    if (!specialJunk1.trimmed().isEmpty()) {
+        obj[configKey::specialJunk1] = specialJunk1;
+    }
+    if (!specialJunk2.trimmed().isEmpty()) {
+        obj[configKey::specialJunk2] = specialJunk2;
+    }
+    if (!specialJunk3.trimmed().isEmpty()) {
+        obj[configKey::specialJunk3] = specialJunk3;
+    }
+    if (!specialJunk4.trimmed().isEmpty()) {
+        obj[configKey::specialJunk4] = specialJunk4;
+    }
+    if (!specialJunk5.trimmed().isEmpty()) {
+        obj[configKey::specialJunk5] = specialJunk5;
+    }
     
     if (!headerProtectionKey.isEmpty()) {
         obj[configKey::headerProtectionKey] = headerProtectionKey;
@@ -226,19 +236,19 @@ QJsonObject AwgClientConfig::toJson() const
         obj[configKey::transportPacketMagicHeader] = transportPacketMagicHeader;
     }
     
-    if (!specialJunk1.isEmpty()) {
+    if (!specialJunk1.trimmed().isEmpty()) {
         obj[configKey::specialJunk1] = specialJunk1;
     }
-    if (!specialJunk2.isEmpty()) {
+    if (!specialJunk2.trimmed().isEmpty()) {
         obj[configKey::specialJunk2] = specialJunk2;
     }
-    if (!specialJunk3.isEmpty()) {
+    if (!specialJunk3.trimmed().isEmpty()) {
         obj[configKey::specialJunk3] = specialJunk3;
     }
-    if (!specialJunk4.isEmpty()) {
+    if (!specialJunk4.trimmed().isEmpty()) {
         obj[configKey::specialJunk4] = specialJunk4;
     }
-    if (!specialJunk5.isEmpty()) {
+    if (!specialJunk5.trimmed().isEmpty()) {
         obj[configKey::specialJunk5] = specialJunk5;
     }
 
@@ -381,7 +391,13 @@ bool AwgServerConfig::hasEqualServerSettings(const AwgServerConfig& other) const
         specialJunk1 != other.specialJunk1 || specialJunk2 != other.specialJunk2 ||
         specialJunk3 != other.specialJunk3 || specialJunk4 != other.specialJunk4 ||
         specialJunk5 != other.specialJunk5 ||
-        headerProtectionKey != other.headerProtectionKey) {
+        headerProtectionKey != other.headerProtectionKey ||
+        contentPaddingAddition != other.contentPaddingAddition ||
+        rekeyAfterTime != other.rekeyAfterTime ||
+        rekeyTimeout != other.rekeyTimeout ||
+        rejectAfterTime != other.rejectAfterTime ||
+        keepaliveTimeout != other.keepaliveTimeout ||
+        maxHandshakeAttempts != other.maxHandshakeAttempts) {
         return false;
     }
 
