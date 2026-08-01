@@ -104,6 +104,8 @@ tasks.configureEach {
         || name.startsWith("mergeExtDex")
         || name.startsWith("mergeLibDex")
         || name.startsWith("mergeProjectDex")
+        || (name.startsWith("merge") && name.endsWith("Resources"))
+        || name.startsWith("processDebugResources")
         || name.startsWith("packageDebug")
     ) {
         dependsOn(":qt:patchQtAndroid8Jar")

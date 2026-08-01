@@ -169,9 +169,26 @@ val patchQtAndroid8Jar by tasks.registering {
         val libsXmlFile = generatedLibsXml.asFile
         if (libsXmlFile.isFile) {
             val original = libsXmlFile.readText()
-            val patched = original.lineSequence()
-                .filterNot { it.contains(";ck-ovpn-plugin") || it.contains(";wg-go") }
-                .joinToString(System.lineSeparator(), postfix = System.lineSeparator())
+            val lines = original.lineSequence()
+                .filterNot {
+                    it.contains(";ck-ovpn-plugin")
+                        || it.contains(";wg-go")
+                        || it.contains(";android8compat")
+                }
+                .toMutableList()
+            val qtLibsIndex = lines.indexOfFirst { it.contains("<array name=\"qt_libs\">") }
+            if (qtLibsIndex < 0)
+                error("Missing qt_libs array in ${libsXmlFile.absolutePath}")
+
+            // androiddeployqt classifies QT_ANDROID_EXTRA_LIBS as bundled libraries,
+            // which Qt loads only after Qt6Core. Android 8 does not provide
+            // getentropy(), so the compatibility library must be the first Qt
+            // library and therefore visible while Qt6Core is loaded.
+            lines.add(qtLibsIndex + 1, "        <item>armeabi-v7a;android8compat</item>")
+            val patched = lines.joinToString(
+                System.lineSeparator(),
+                postfix = System.lineSeparator()
+            )
             if (patched != original)
                 libsXmlFile.writeText(patched)
         }
