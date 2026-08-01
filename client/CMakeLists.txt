@@ -39,6 +39,7 @@ if(WIN32 OR (APPLE AND NOT IOS) OR (LINUX AND NOT ANDROID))
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS ${PACKAGES})
+find_package(OpenSSL REQUIRED)
 
 set(LIBS ${LIBS}
     Qt6::Core Qt6::Gui
@@ -174,6 +175,7 @@ endif()
 if(LINUX AND NOT ANDROID)
     set(LIBS ${LIBS} -static-libstdc++ -static-libgcc -ldl)
     link_directories(${CMAKE_CURRENT_LIST_DIR}/platforms/linux)
+    set(LIBS ${LIBS} -Wl,--no-as-needed $<TARGET_LINKER_FILE:Qt6::RemoteObjects> -Wl,--as-needed)
 endif()
 
 if(WIN32 OR (APPLE AND NOT IOS AND NOT MACOS_NE) OR (LINUX AND NOT ANDROID))
@@ -231,7 +233,7 @@ install(RUNTIME_DEPENDENCY_SET client_deps
         [[hvsifiletrust\.dll]]
         [[libc\.so\..*]] [[libgcc_s\.so\..*]] [[libm\.so\..*]] [[libstdc\+\+\.so\..*]]
         [[.*\.framework]]
-        [[^[Qq]t.*]]
+        [[^(lib)?[Qq]t.*]]
     POST_EXCLUDE_REGEXES
         [[^.*[\\/]system32[\\/].*\.dll$]]
         [[^/lib.*]]
