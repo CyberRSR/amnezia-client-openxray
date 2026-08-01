@@ -55,6 +55,42 @@ class WwgDnsPolicyTest {
     }
 
     @Test
+    fun ipv4OnlyOverlayRemovesIpv6RoutesInsteadOfLeakingThem() {
+        val policy = overlayRoutesForAvailableFamilies(
+            "10.8.2.2/32",
+            listOf("0.0.0.0/0", "::/0", "2001:db8::/32"),
+        )
+
+        assertEquals(listOf("0.0.0.0/0"), policy.allowedIps)
+        assertEquals(2, policy.removedIpv6Routes)
+        assertFalse(policy.ipv6Supported)
+    }
+
+    @Test
+    fun dualStackOverlayKeepsIpv6Routes() {
+        val routes = listOf("0.0.0.0/0", "::/0")
+        val policy = overlayRoutesForAvailableFamilies(
+            "10.8.2.2/32, fd00:8:2::2/128",
+            routes,
+        )
+
+        assertEquals(routes, policy.allowedIps)
+        assertEquals(0, policy.removedIpv6Routes)
+        assertTrue(policy.ipv6Supported)
+    }
+
+    @Test
+    fun ipv4OnlyOverlayBlocksIpv6EvenWhenNoIpv6RouteWasConfigured() {
+        val policy = overlayRoutesForAvailableFamilies(
+            "10.8.2.2/32",
+            listOf("0.0.0.0/0"),
+        )
+
+        assertEquals(0, policy.removedIpv6Routes)
+        assertFalse(policy.ipv6Supported)
+    }
+
+    @Test
     fun dnsOutageDoesNotMasqueradeAsFullVpnFailure() {
         assertEquals(WwgHealthState.PARTIAL, classifyWwgHealth(0, 2, 1, 2))
         assertEquals(WwgHealthState.PARTIAL, classifyWwgHealth(1, 2, 0, 2))

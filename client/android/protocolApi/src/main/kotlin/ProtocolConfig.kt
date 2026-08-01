@@ -62,6 +62,8 @@ open class ProtocolConfig protected constructor(
         internal var allowSplitTunneling: Boolean = true
             private set
 
+        private var ipv6Enabled: Boolean = true
+
         open var mtu: Int = 0
             protected set
 
@@ -110,6 +112,13 @@ open class ProtocolConfig protected constructor(
         fun setBlockingMode(blockingMode: Boolean) = apply { this.blockingMode = blockingMode }
 
         fun disableSplitTunneling() = apply { this.allowSplitTunneling = false }
+
+        fun disableIpv6() = apply {
+            ipv6Enabled = false
+            // allowAllAF would explicitly let IPv6 bypass a VPN which has no
+            // IPv6 address or route, defeating the family block below.
+            allowAllAF = false
+        }
 
         fun setMtu(mtu: Int) = apply { this.mtu = mtu }
 
@@ -165,6 +174,16 @@ open class ProtocolConfig protected constructor(
             }
         }
 
+        private fun processAddressFamilies() {
+            if (ipv6Enabled) return
+
+            addresses.removeIf { !it.isIpv4 }
+            dnsServers.removeIf { it.address.size != 4 }
+            routes.removeIf { !it.inetNetwork.isIpv4 }
+            includedAddresses.removeIf { !it.isIpv4 }
+            excludedAddresses.removeIf { !it.isIpv4 }
+        }
+
         private fun validate() {
             val errorMessage = StringBuilder()
 
@@ -179,6 +198,10 @@ open class ProtocolConfig protected constructor(
 
         protected fun configBuild() {
             processSplitTunneling()
+            // Split-tunnel exclusion adds an IPv6 default route by design.
+            // Apply the caller's family policy afterwards so IPv4-only
+            // tunnels do not accidentally regain an IPv6 bypass route.
+            processAddressFamilies()
             processRoutes()
             validate()
         }

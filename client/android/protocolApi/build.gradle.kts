@@ -15,4 +15,6 @@ dependencies {
     compileOnly(project(":utils"))
     implementation(libs.androidx.annotation)
     implementation(libs.kotlinx.coroutines)
+    testImplementation(project(":utils"))
+    testImplementation("junit:junit:4.13.2")
 }

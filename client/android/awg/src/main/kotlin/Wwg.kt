@@ -56,6 +56,7 @@ import org.amnezia.vpn.protocol.VpnStartException
 import org.amnezia.vpn.protocol.wireguard.WireguardConfig
 import org.amnezia.vpn.util.LibraryLoader.loadSharedLibrary
 import org.amnezia.vpn.util.Log
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import kotlin.math.max
@@ -196,7 +197,10 @@ internal fun effectiveWwgMtus(
     // reassemblies time out and manifest as stalled TLS/QUIC and reconnects.
     //
     // Include the AWG transport header/tag, S4 and the larger IPv6+UDP header
-    // so both IPv4 and IPv6 exit endpoints remain fragment-free.
+    // so both IPv4 and IPv6 exit endpoints remain fragment-free. The entry
+    // server interface must use an MTU at least this large (1380 for the
+    // standard WWG v3 profile); shrinking the exit TUN below 1228 would break
+    // QUIC Initial packets instead of solving the encapsulation mismatch.
     val effectiveUnderlay = if (isV3) {
         maxOf(underlay, minimumV3UnderlayMtu(overlay, overlayS4))
     } else {
@@ -261,6 +265,37 @@ internal fun requiredDnsHostRoutes(dnsServers: List<String>, allowedIps: List<St
             else -> null
         }
     }.distinct()
+}
+
+internal data class WwgOverlayRoutePolicy(
+    val allowedIps: List<String>,
+    val removedIpv6Routes: Int,
+    val ipv6Supported: Boolean,
+)
+
+internal fun overlayRoutesForAvailableFamilies(
+    clientIps: String,
+    allowedIps: List<String>,
+): WwgOverlayRoutePolicy {
+    val hasIpv6Address = clientIps.split(',').any { address ->
+        ':' in address.trim().substringBefore('/')
+    }
+    if (hasIpv6Address) {
+        return WwgOverlayRoutePolicy(allowedIps, 0, true)
+    }
+
+    // VpnService blocks an address family only when no address, route or DNS
+    // server from that family is configured. ColorOS 14 accepts an IPv6 route
+    // in Builder but does not install it in the VPN routing table when the AWG
+    // profile has no IPv6 tunnel address. That makes the family fall through
+    // to the mobile network. Besides leaking traffic, it lets YouTube select a
+    // carrier-only CDN and then try to reach it through the IPv4 exit tunnel.
+    // An IPv4-only WWG peer cannot carry IPv6 safely, so omit all IPv6 routes
+    // and let Android block the family instead of bypassing both VPN layers.
+    val filtered = allowedIps.filterNot { route ->
+        ':' in route.trim().substringBefore('/')
+    }
+    return WwgOverlayRoutePolicy(filtered, allowedIps.size - filtered.size, false)
 }
 
 internal class WwgRetryPolicy(
@@ -838,14 +873,35 @@ class Wwg : Protocol() {
         // which guarantees DNS traverses overlay and underlay in that order.
         // Explicit host routes also preserve that invariant for split profiles
         // whose allowed_ips do not contain a default route.
-        val allowedIps = overlayData.getJSONArray("allowed_ips")
-        val allowedIpStrings = (0 until allowedIps.length()).map { allowedIps.getString(it) }
+        val configuredAllowedIps = overlayData.getJSONArray("allowed_ips")
+        val configuredAllowedIpStrings = (0 until configuredAllowedIps.length()).map {
+            configuredAllowedIps.getString(it)
+        }
+        val routePolicy = overlayRoutesForAvailableFamilies(
+            overlayData.optString("client_ip"),
+            configuredAllowedIpStrings,
+        )
         val dnsServers = listOf(result.optString("dns1"), result.optString("dns2"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-        val addedRoutes = requiredDnsHostRoutes(dnsServers, allowedIpStrings)
+        if (!routePolicy.ipv6Supported && dnsServers.any { ':' in it }) {
+            throw BadConfigException(
+                "WWG overlay has an IPv6 DNS server but no IPv6 tunnel address"
+            )
+        }
+        val allowedIps = JSONArray()
+        routePolicy.allowedIps.forEach(allowedIps::put)
+        val addedRoutes = requiredDnsHostRoutes(dnsServers, routePolicy.allowedIps)
         addedRoutes.forEach(allowedIps::put)
         overlayData.put("allowed_ips", allowedIps)
+        if (!routePolicy.ipv6Supported) {
+            Log.i(
+                TAG,
+                "WWG_EVENT event=ip_family_policy generation=$expectedGeneration " +
+                    "ipv6=blocked reason=no_overlay_ipv6_address " +
+                    "removedRoutes=${routePolicy.removedIpv6Routes}"
+            )
+        }
         Log.i(
             TAG,
             "WWG_EVENT event=dns_route generation=$expectedGeneration chain=overlay_then_underlay " +
@@ -1102,6 +1158,23 @@ private class WwgConfigParser : Awg() {
 
 private class WwgOverlayAwg : Awg() {
     override val ifName: String = OVERLAY_IF_NAME
+
+    override fun parseConfig(config: JSONObject): WireguardConfig {
+        val configData = config.getJSONObject(AWG_CONFIG_DATA)
+        val hasIpv6Address = configData.getString("client_ip").split(',').any { address ->
+            ':' in address.trim().substringBefore('/')
+        }
+        return WireguardConfig.build {
+            setUseProtocolExtension(true)
+            configExtensionParameters(configData)
+            configWireguard(config, configData)
+            configSplitTunneling(config)
+            configAppSplitTunneling(config)
+            if (!hasIpv6Address) {
+                disableIpv6()
+            }
+        }
+    }
 
     fun replaceWwgVpn(config: JSONObject, vpnBuilder: Builder, protect: (Int) -> Boolean) {
         replaceVpnWithConfig(config, vpnBuilder, protect)
