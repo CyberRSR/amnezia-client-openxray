@@ -1,11 +1,13 @@
 package org.amnezia.vpn.protocol.wireguard
 
 import android.net.VpnService.Builder
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.amnezia.awg.GoBackend
 import org.amnezia.vpn.protocol.Protocol
@@ -32,6 +34,7 @@ open class Wireguard : Protocol() {
     protected open val ifName: String = "amn0"
     private lateinit var scope: CoroutineScope
     private var statusJob: Job? = null
+    private val statusGeneration = AtomicLong(0L)
 
     override val statistics: Statistics
         get() {
@@ -179,46 +182,79 @@ open class Wireguard : Protocol() {
 
         buildVpnInterface(config, vpnBuilder)
 
-        vpnBuilder.establish().use { tunFd ->
-            if (tunFd == null) {
-                throw VpnStartException("Create VPN interface: permission not granted or revoked")
-            }
-            if (stopExistingVpn && tunnelHandle != -1) {
-                turnOffVpn()
-            }
-            Log.i(TAG, "awg-go backend ${GoBackend.awgVersion()}")
-            tunnelHandle = GoBackend.awgTurnOn(ifName, tunFd.detachFd(), config.toWgUserspaceString())
+        val previousHandle = tunnelHandle
+        if (stopExistingVpn && previousHandle != -1) {
+            invalidateStatusJob()
         }
 
-        if (tunnelHandle < 0) {
-            tunnelHandle = -1
-            throw VpnStartException("Wireguard tunnel creation error")
+        var replacementHandle = -1
+        try {
+            vpnBuilder.establish().use { tunFd ->
+                if (tunFd == null) {
+                    throw VpnStartException("Create VPN interface: permission not granted or revoked")
+                }
+                Log.i(TAG, "awg-go backend ${GoBackend.awgVersion()}")
+                replacementHandle = GoBackend.awgTurnOn(
+                    ifName,
+                    tunFd.detachFd(),
+                    config.toWgUserspaceString()
+                )
+            }
+
+            if (replacementHandle < 0) {
+                throw VpnStartException("Wireguard tunnel creation error")
+            }
+
+            if (!protect(GoBackend.awgGetSocketV4(replacementHandle))
+                || !protect(GoBackend.awgGetSocketV6(replacementHandle))
+            ) {
+                throw VpnStartException("Protect VPN interface: permission not granted or revoked")
+            }
+        } catch (e: Exception) {
+            if (replacementHandle >= 0) {
+                GoBackend.awgTurnOff(replacementHandle)
+            }
+            if (stopExistingVpn && previousHandle != -1 && tunnelHandle == previousHandle) {
+                launchStatusJob()
+            }
+            throw e
         }
 
-        if (!protect(GoBackend.awgGetSocketV4(tunnelHandle)) || !protect(GoBackend.awgGetSocketV6(tunnelHandle))) {
-            GoBackend.awgTurnOff(tunnelHandle)
-            tunnelHandle = -1
-            throw VpnStartException("Protect VPN interface: permission not granted or revoked")
+        if (stopExistingVpn && previousHandle != -1) {
+            GoBackend.awgTurnOff(previousHandle)
         }
+        tunnelHandle = replacementHandle
         launchStatusJob()
     }
 
     private fun launchStatusJob() {
+        val expectedGeneration = statusGeneration.incrementAndGet()
         Log.d(TAG, "Launch status job")
         statusJob = scope.launch {
-            while (true) {
+            while (isActive && statusGeneration.get() == expectedGeneration) {
                 val lastHandshake = getLastHandshake()
                 Log.v(TAG, "lastHandshake=$lastHandshake")
                 if (lastHandshake == 0L) {
                     delay(1000)
                     continue
                 }
+                if (!isActive || statusGeneration.get() != expectedGeneration) {
+                    break
+                }
                 if (lastHandshake == -2L || lastHandshake > 0L) state.value = CONNECTED
                 else if (lastHandshake == -1L) state.value = DISCONNECTED
-                statusJob = null
                 break
             }
+            if (statusGeneration.get() == expectedGeneration) {
+                statusJob = null
+            }
         }
+    }
+
+    private fun invalidateStatusJob() {
+        statusGeneration.incrementAndGet()
+        statusJob?.cancel()
+        statusJob = null
     }
 
     private fun getLastHandshake(): Long {
@@ -240,8 +276,7 @@ open class Wireguard : Protocol() {
     }
 
     private fun turnOffVpn() {
-        statusJob?.cancel()
-        statusJob = null
+        invalidateStatusJob()
         val handleToClose = tunnelHandle
         tunnelHandle = -1
         GoBackend.awgTurnOff(handleToClose)
