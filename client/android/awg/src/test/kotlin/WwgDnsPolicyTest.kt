@@ -53,4 +53,12 @@ class WwgDnsPolicyTest {
 
         assertEquals(listOf("1.1.1.1/32", "2001:4860:4860::8888/128"), routes)
     }
+
+    @Test
+    fun dnsOutageDoesNotMasqueradeAsFullVpnFailure() {
+        assertEquals(WwgHealthState.PARTIAL, classifyWwgHealth(0, 2, 1, 2))
+        assertEquals(WwgHealthState.PARTIAL, classifyWwgHealth(1, 2, 0, 2))
+        assertEquals(WwgHealthState.FAILED, classifyWwgHealth(0, 2, 0, 2))
+        assertEquals(WwgHealthState.HEALTHY, classifyWwgHealth(2, 2, 1, 2))
+    }
 }

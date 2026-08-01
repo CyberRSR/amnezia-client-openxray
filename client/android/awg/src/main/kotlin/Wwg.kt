@@ -12,6 +12,8 @@ import java.io.ByteArrayOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -94,24 +96,68 @@ private val AWG_V3_RANGE_FIELDS = listOf(
 )
 private val AWG_V3_FIELDS = listOf(HEADER_PROTECTION_KEY) + AWG_V3_RANGE_FIELDS
 
+private enum class HealthCheckKind {
+    DNS,
+    TCP,
+}
+
 private data class HealthCheckTarget(
     val host: String,
+    val port: Int,
+    val kind: HealthCheckKind,
 )
 
 private val HEALTHCHECK_TARGETS = listOf(
     // Query the exact resolvers advertised on the Android VPN. A valid DNS
     // response proves useful payload flow and works on Android 8 without
     // depending on its outdated TLS trust store.
-    HealthCheckTarget("1.1.1.1"),
-    HealthCheckTarget("8.8.8.8"),
+    HealthCheckTarget("1.1.1.1", DNS_PORT, HealthCheckKind.DNS),
+    HealthCheckTarget("8.8.8.8", DNS_PORT, HealthCheckKind.DNS),
+    // UDP/53 is intentionally not the only signal. Some mobile networks
+    // temporarily suppress public DNS datagrams while ordinary VPN payload
+    // (HTTPS/QUIC) continues to flow. A VPN-bound TCP connect distinguishes
+    // that endpoint-specific condition from a genuinely dead VPN path.
+    HealthCheckTarget("1.1.1.1", 443, HealthCheckKind.TCP),
+    HealthCheckTarget("8.8.8.8", 443, HealthCheckKind.TCP),
 )
 
+internal enum class WwgHealthState {
+    HEALTHY,
+    PARTIAL,
+    FAILED,
+}
+
+internal fun classifyWwgHealth(
+    dnsSuccessCount: Int,
+    dnsTotalCount: Int,
+    tcpSuccessCount: Int,
+    tcpTotalCount: Int,
+): WwgHealthState {
+    require(dnsSuccessCount in 0..dnsTotalCount) { "Invalid WWG DNS health counts" }
+    require(tcpSuccessCount in 0..tcpTotalCount) { "Invalid WWG TCP health counts" }
+    return when {
+        tcpSuccessCount > 0 && dnsSuccessCount == dnsTotalCount -> WwgHealthState.HEALTHY
+        tcpSuccessCount > 0 || dnsSuccessCount > 0 -> WwgHealthState.PARTIAL
+        else -> WwgHealthState.FAILED
+    }
+}
+
 private data class HealthCheckResult(
-    val successCount: Int,
-    val totalCount: Int,
+    val dnsSuccessCount: Int,
+    val dnsTotalCount: Int,
+    val tcpSuccessCount: Int,
+    val tcpTotalCount: Int,
     val networkFound: Boolean,
 ) {
+    val successCount: Int get() = dnsSuccessCount + tcpSuccessCount
+    val totalCount: Int get() = dnsTotalCount + tcpTotalCount
     val isUsable: Boolean get() = successCount > 0
+    val state: WwgHealthState get() = classifyWwgHealth(
+        dnsSuccessCount,
+        dnsTotalCount,
+        tcpSuccessCount,
+        tcpTotalCount,
+    )
 }
 
 private data class UnderlayRuntime(
@@ -610,11 +656,11 @@ class Wwg : Protocol() {
                 nextHealthProbeAt = now + HEALTH_PROBE_INTERVAL_MS
 
                 val result = healthCheck(0, expectedGeneration)
-                when {
-                    result.successCount == result.totalCount -> {
+                when (result.state) {
+                    WwgHealthState.HEALTHY -> {
                         failedFullProbeRounds = 0
                     }
-                    result.successCount > 0 -> {
+                    WwgHealthState.PARTIAL -> {
                         failedFullProbeRounds = 0
                         if (shouldLogHealthEvent(
                                 "partial:$expectedGeneration:${result.successCount}/${result.totalCount}",
@@ -624,11 +670,13 @@ class Wwg : Protocol() {
                             Log.w(
                                 TAG,
                                 "WWG_EVENT event=health_partial generation=$expectedGeneration " +
-                                    "success=${result.successCount} total=${result.totalCount}"
+                                    "success=${result.successCount} total=${result.totalCount} " +
+                                    "dns=${result.dnsSuccessCount}/${result.dnsTotalCount} " +
+                                    "tcp=${result.tcpSuccessCount}/${result.tcpTotalCount}"
                             )
                         }
                     }
-                    else -> {
+                    WwgHealthState.FAILED -> {
                         failedFullProbeRounds += 1
                         Log.w(
                             TAG,
@@ -827,13 +875,23 @@ class Wwg : Protocol() {
         expectedGeneration: Long
     ): HealthCheckResult = withContext(Dispatchers.IO) {
         val network = findVpnNetwork(networkWaitMs)
-            ?: return@withContext HealthCheckResult(0, HEALTHCHECK_TARGETS.size, false)
-        val successes = supervisorScope {
+            ?: return@withContext HealthCheckResult(0, 2, 0, 2, false)
+        val results = supervisorScope {
             HEALTHCHECK_TARGETS.map { target ->
-                async { probe(network, target, expectedGeneration) }
-            }.awaitAll().count { it }
+                async { target to probe(network, target, expectedGeneration) }
+            }.awaitAll()
         }
-        HealthCheckResult(successes, HEALTHCHECK_TARGETS.size, true)
+        HealthCheckResult(
+            dnsSuccessCount = results.count { (target, success) ->
+                target.kind == HealthCheckKind.DNS && success
+            },
+            dnsTotalCount = results.count { it.first.kind == HealthCheckKind.DNS },
+            tcpSuccessCount = results.count { (target, success) ->
+                target.kind == HealthCheckKind.TCP && success
+            },
+            tcpTotalCount = results.count { it.first.kind == HealthCheckKind.TCP },
+            networkFound = true,
+        )
     }
 
     private suspend fun findVpnNetwork(waitMs: Long): Network? {
@@ -853,33 +911,53 @@ class Wwg : Protocol() {
     }
 
     private fun probe(network: Network, target: HealthCheckTarget, expectedGeneration: Long): Boolean = try {
-        val transactionId = ThreadLocalRandom.current().nextInt(0x10000)
-        val query = buildDnsHealthQuery(transactionId)
-        DatagramSocket().use { socket ->
-            network.bindSocket(socket)
-            socket.soTimeout = HEALTH_PROBE_TIMEOUT_MS
-            val resolver = InetAddress.getByName(target.host)
-            socket.send(DatagramPacket(query, query.size, resolver, DNS_PORT))
+        when (target.kind) {
+            HealthCheckKind.DNS -> {
+                val transactionId = ThreadLocalRandom.current().nextInt(0x10000)
+                val query = buildDnsHealthQuery(transactionId)
+                DatagramSocket().use { socket ->
+                    network.bindSocket(socket)
+                    socket.soTimeout = HEALTH_PROBE_TIMEOUT_MS
+                    val resolver = InetAddress.getByName(target.host)
+                    // Connecting the datagram socket both pins the return
+                    // path to this resolver and avoids accepting unrelated
+                    // packets from a different endpoint.
+                    socket.connect(resolver, target.port)
+                    socket.send(DatagramPacket(query, query.size))
 
-            val response = ByteArray(1500)
-            val packet = DatagramPacket(response, response.size)
-            socket.receive(packet)
-            if (packet.address != resolver || !isSuccessfulDnsHealthResponse(response, packet.length, transactionId)) {
-                throw VpnException("Invalid DNS health response")
+                    val response = ByteArray(1500)
+                    val packet = DatagramPacket(response, response.size)
+                    socket.receive(packet)
+                    if (!packet.address.equals(resolver) ||
+                        !isSuccessfulDnsHealthResponse(response, packet.length, transactionId)
+                    ) {
+                        throw VpnException("Invalid DNS health response")
+                    }
+                }
+            }
+            HealthCheckKind.TCP -> {
+                Socket().use { socket ->
+                    network.bindSocket(socket)
+                    socket.connect(
+                        InetSocketAddress(InetAddress.getByName(target.host), target.port),
+                        HEALTH_PROBE_TIMEOUT_MS,
+                    )
+                }
             }
         }
         true
     } catch (e: Exception) {
         val now = SystemClock.elapsedRealtime()
         if (shouldLogHealthEvent(
-                "probe:$expectedGeneration:${target.host}:$DNS_PORT",
+                "probe:$expectedGeneration:${target.host}:${target.port}:${target.kind}",
                 now
             )
         ) {
             Log.w(
                 TAG,
                 "WWG_EVENT event=probe_failure generation=$expectedGeneration " +
-                    "target=${target.host} transport=udp_dns port=$DNS_PORT qname=$DNS_HEALTH_NAME " +
+                    "target=${target.host} transport=${target.kind.name.lowercase()} port=${target.port} " +
+                    (if (target.kind == HealthCheckKind.DNS) "qname=$DNS_HEALTH_NAME " else "") +
                     "reason=${logValue(e.message ?: e.toString())}"
             )
         }
