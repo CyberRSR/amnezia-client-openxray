@@ -31,6 +31,8 @@ class AwgAndroid(ConanFile):
         cmake_layout(self)
 
     def build_requirements(self):
+        if self._prebuilt_dir():
+            return
         self.tool_requires("cmake/[>=3.4.1 <4]")
         self.tool_requires("go/1.26.0")
         if platform.system() == "Windows" and not self.conf.get("tools.microsoft.bash:path", check_type=str):
@@ -41,6 +43,14 @@ class AwgAndroid(ConanFile):
             raise ConanInvalidConfiguration(f"{self.name} v{self.version} does not support {self.settings.os}")
 
     def source(self):
+        # A verified prebuilt package is already the complete output of this
+        # recipe. Do not clone the large recursive upstream tree merely to
+        # copy those binaries during package(). This also keeps offline and
+        # restricted release builds deterministic.
+        # Conan forbids settings access from source(), so defer the ABI and
+        # marker validation to build_requirements()/package().
+        if os.getenv("AMNEZIA_AWG_ANDROID_PREBUILT_DIR"):
+            return
         git = Git(self, folder=self._source_root)
         git.clone(
             url="https://github.com/amnezia-vpn/amneziawg-android.git",
