@@ -202,6 +202,15 @@ namespace amnezia
             constexpr char awgV2[] = "2";
         }
 
+        namespace wwg
+        {
+            // The entry netstack carries the complete exit AWG3 datagram.
+            // 1380 keeps a 1280-byte exit TUN plus AWG transport/S4 and
+            // IPv6+UDP headers fragment-free; with S4=14 its outer entry
+            // packet still fits a 1500-byte physical path.
+            constexpr char defaultV3UnderlayMtu[] = "1380";
+        }
+
         namespace socks5Proxy
         {
             constexpr char defaultUserName[] = "proxy_user";

@@ -76,6 +76,26 @@ PageType {
                 text: qsTr("Use one WWG profile per device. Reusing one key and tunnel IP on several devices causes endpoint competition and reconnects.")
             }
 
+            ParagraphTextType {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                visible: validV3 && parseInt(underlayMtu) < 1380
+                color: AmneziaStyle.color.goldenApricot
+                text: qsTr("Nested AmneziaWG v3 must carry the complete exit tunnel packet without fragmentation. Use entry MTU 1380 with exit MTU 1280 and configure the entry server interface for MTU 1380. Android raises an undersized entry MTU only as far as the current exit packet requires.")
+            }
+
+            ParagraphTextType {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                visible: validV3 && parseInt(overlayMtu) < 1228
+                color: AmneziaStyle.color.vibrantRed
+                text: qsTr("Exit MTU below 1228 can prevent QUIC video traffic from starting. Use 1280 unless the network requires a different value.")
+            }
+
             Header2Type {
                 Layout.fillWidth: true
                 Layout.topMargin: 24

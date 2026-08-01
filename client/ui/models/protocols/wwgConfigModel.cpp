@@ -123,7 +123,7 @@ QString WwgConfigModel::validationError() const
 
 void WwgConfigModel::applyDefaults()
 {
-    const auto apply = [](AwgProtocolConfig &config) {
+    const auto apply = [](AwgProtocolConfig &config, bool isUnderlay) {
         if (config.serverConfig.protocolVersion.isEmpty()) {
             // Both AWG2 and AWG3 intentionally use protocol_version=2.
             config.serverConfig.protocolVersion = protocols::awg::awgV2;
@@ -133,15 +133,17 @@ void WwgConfigModel::applyDefaults()
         }
         auto &client = config.clientConfig.value();
         if (client.mtu.isEmpty()) {
-            client.mtu = protocols::awg::defaultMtu;
+            client.mtu = isUnderlay && WwgProtocolConfig::hasAwgV3Fields(config)
+                    ? protocols::wwg::defaultV3UnderlayMtu
+                    : protocols::awg::defaultMtu;
         }
         client.isObfuscationEnabled = true;
         if (config.serverConfig.port.isEmpty() && client.port > 0) {
             config.serverConfig.port = QString::number(client.port);
         }
     };
-    apply(m_protocolConfig.underlayAwgConfig);
-    apply(m_protocolConfig.overlayAwgConfig);
+    apply(m_protocolConfig.underlayAwgConfig, true);
+    apply(m_protocolConfig.overlayAwgConfig, false);
 }
 
 QHash<int, QByteArray> WwgConfigModel::roleNames() const

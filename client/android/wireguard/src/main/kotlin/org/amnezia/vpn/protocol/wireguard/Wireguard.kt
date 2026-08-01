@@ -66,6 +66,22 @@ open class Wireguard : Protocol() {
         this.config = wireguardConfig
     }
 
+    /**
+     * Atomically replaces an established userspace tunnel configuration. The
+     * new Android VPN interface is established before the old Go backend is
+     * stopped, so VpnService is never left without an active TUN during a
+     * protocol-managed reconnect.
+     */
+    protected fun replaceVpnWithConfig(
+        config: JSONObject,
+        vpnBuilder: Builder,
+        protect: (Int) -> Boolean
+    ) {
+        val wireguardConfig = parseConfig(config)
+        start(wireguardConfig, vpnBuilder, protect, stopExistingVpn = true)
+        this.config = wireguardConfig
+    }
+
     protected open fun parseConfig(config: JSONObject): WireguardConfig {
         val configData = config.getJSONObject("wireguard_config_data")
         return WireguardConfig.build {
@@ -164,11 +180,11 @@ open class Wireguard : Protocol() {
         buildVpnInterface(config, vpnBuilder)
 
         vpnBuilder.establish().use { tunFd ->
-            if (stopExistingVpn && tunnelHandle != -1) {
-                turnOffVpn()
-            }
             if (tunFd == null) {
                 throw VpnStartException("Create VPN interface: permission not granted or revoked")
+            }
+            if (stopExistingVpn && tunnelHandle != -1) {
+                turnOffVpn()
             }
             Log.i(TAG, "awg-go backend ${GoBackend.awgVersion()}")
             tunnelHandle = GoBackend.awgTurnOn(ifName, tunFd.detachFd(), config.toWgUserspaceString())

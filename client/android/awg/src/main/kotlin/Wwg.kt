@@ -8,7 +8,11 @@ import android.net.VpnService
 import android.net.VpnService.Builder
 import android.os.SystemClock
 import android.util.Base64
-import java.net.InetSocketAddress
+import java.io.ByteArrayOutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -18,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
@@ -27,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -66,11 +73,15 @@ private const val HEADER_PROTECTION_KEY = "HeaderProtectionKey"
 private const val AWG_HANDSHAKE_TIMEOUT_MS = 45_000L
 private const val MONITOR_TICK_MS = 1_000L
 private const val HEALTH_PROBE_INTERVAL_MS = 5_000L
-private const val HEALTH_PROBE_TIMEOUT_MS = 2_000
+private const val HEALTH_PROBE_TIMEOUT_MS = 3_000
 private const val INITIAL_VPN_NETWORK_TIMEOUT_MS = 10_000L
 private const val STABLE_CONNECTION_RESET_MS = 120_000L
 private const val HEALTH_EVENT_LOG_INTERVAL_MS = 60_000L
 private const val RETRY_JITTER_PERCENT = 10
+private const val AWG_TRANSPORT_MESSAGE_OVERHEAD = 32
+private const val IPV6_UDP_OVERHEAD = 48
+private const val DNS_PORT = 53
+private const val DNS_HEALTH_NAME = "example.com"
 
 private val RETRY_BACKOFF_MS = longArrayOf(5_000L, 15_000L, 30_000L, 60_000L, 120_000L)
 private val AWG_V3_RANGE_FIELDS = listOf(
@@ -85,14 +96,14 @@ private val AWG_V3_FIELDS = listOf(HEADER_PROTECTION_KEY) + AWG_V3_RANGE_FIELDS
 
 private data class HealthCheckTarget(
     val host: String,
-    val port: Int,
 )
 
 private val HEALTHCHECK_TARGETS = listOf(
-    // Literal IPs keep DNS and HTTP/TLS failures from stretching a five-second
-    // VPN-bound reachability round.
-    HealthCheckTarget("1.1.1.1", 443),
-    HealthCheckTarget("8.8.8.8", 53),
+    // Query the exact resolvers advertised on the Android VPN. A valid DNS
+    // response proves useful payload flow and works on Android 8 without
+    // depending on its outdated TLS trust store.
+    HealthCheckTarget("1.1.1.1"),
+    HealthCheckTarget("8.8.8.8"),
 )
 
 private data class HealthCheckResult(
@@ -103,10 +114,108 @@ private data class HealthCheckResult(
     val isUsable: Boolean get() = successCount > 0
 }
 
+private data class UnderlayRuntime(
+    val handle: Int,
+    val relayPort: Int,
+)
+
 internal data class WwgRetryDelay(
     val attempt: Int,
     val delayMs: Long,
 )
+
+internal data class WwgEffectiveMtus(
+    val underlay: Int,
+    val overlay: Int,
+    val adjusted: Boolean,
+)
+
+private fun alignToAwgBlock(size: Int): Int = (size + 15) and -16
+
+internal fun minimumV3UnderlayMtu(overlay: Int, overlayS4: Int): Int =
+    alignToAwgBlock(overlay) +
+        AWG_TRANSPORT_MESSAGE_OVERHEAD +
+        overlayS4.coerceAtLeast(0) +
+        IPV6_UDP_OVERHEAD
+
+internal fun effectiveWwgMtus(
+    underlay: Int,
+    overlay: Int,
+    isV3: Boolean,
+    overlayS4: Int = 0,
+): WwgEffectiveMtus {
+    // The entry netstack carries the complete exit AWG datagram. If its MTU is
+    // smaller than that datagram, Linux conntrack has to reassemble a fragment
+    // stream before forwarding it to the exit server. Under load those
+    // reassemblies time out and manifest as stalled TLS/QUIC and reconnects.
+    //
+    // Include the AWG transport header/tag, S4 and the larger IPv6+UDP header
+    // so both IPv4 and IPv6 exit endpoints remain fragment-free.
+    val effectiveUnderlay = if (isV3) {
+        maxOf(underlay, minimumV3UnderlayMtu(overlay, overlayS4))
+    } else {
+        underlay
+    }
+    val effectiveOverlay = overlay
+    return WwgEffectiveMtus(
+        underlay = effectiveUnderlay,
+        overlay = effectiveOverlay,
+        adjusted = effectiveUnderlay != underlay || effectiveOverlay != overlay,
+    )
+}
+
+internal fun buildDnsHealthQuery(transactionId: Int, name: String = DNS_HEALTH_NAME): ByteArray {
+    require(transactionId in 0..0xffff) { "DNS transaction ID is out of range" }
+    val labels = name.trim('.').split('.').filter { it.isNotEmpty() }
+    require(labels.isNotEmpty() && labels.all { it.length in 1..63 }) { "Invalid DNS health name" }
+
+    return ByteArrayOutputStream().apply {
+        write(transactionId ushr 8)
+        write(transactionId and 0xff)
+        write(0x01) // recursion desired
+        write(0x00)
+        write(0x00)
+        write(0x01) // one question
+        repeat(6) { write(0x00) }
+        labels.forEach { label ->
+            val bytes = label.toByteArray(Charsets.US_ASCII)
+            write(bytes.size)
+            write(bytes)
+        }
+        write(0x00)
+        write(0x00)
+        write(0x01) // QTYPE=A
+        write(0x00)
+        write(0x01) // QCLASS=IN
+    }.toByteArray()
+}
+
+internal fun isSuccessfulDnsHealthResponse(response: ByteArray, length: Int, transactionId: Int): Boolean {
+    if (length < 12 || length > response.size) return false
+    val responseId = ((response[0].toInt() and 0xff) shl 8) or (response[1].toInt() and 0xff)
+    val flags = ((response[2].toInt() and 0xff) shl 8) or (response[3].toInt() and 0xff)
+    val answerCount = ((response[6].toInt() and 0xff) shl 8) or (response[7].toInt() and 0xff)
+    return responseId == transactionId &&
+        flags and 0x8000 != 0 && // response
+        flags and 0x0200 == 0 && // not truncated
+        flags and 0x000f == 0 && // NOERROR
+        answerCount > 0
+}
+
+internal fun requiredDnsHostRoutes(dnsServers: List<String>, allowedIps: List<String>): List<String> {
+    val normalizedRoutes = allowedIps.map { it.trim().lowercase() }.toSet()
+    val hasIpv4Default = "0.0.0.0/0" in normalizedRoutes
+    val hasIpv6Default = "::/0" in normalizedRoutes
+    return dnsServers.mapNotNull { rawDns ->
+        val dns = rawDns.trim()
+        when {
+            dns.isEmpty() -> null
+            ':' in dns && !hasIpv6Default && "${dns.lowercase()}/128" !in normalizedRoutes -> "$dns/128"
+            ':' !in dns && !hasIpv4Default && "$dns/32" !in normalizedRoutes -> "$dns/32"
+            else -> null
+        }
+    }.distinct()
+}
 
 internal class WwgRetryPolicy(
     private val backoffMs: LongArray = RETRY_BACKOFF_MS,
@@ -228,12 +337,24 @@ class Wwg : Protocol() {
         state.value = DISCONNECTED
     }
 
+    @Suppress("UNUSED_PARAMETER")
     override fun reconnectVpn(vpnBuilder: Builder, protect: (Int) -> Boolean) {
         if (sourceConfig == null) {
             throw VpnException("WWG reconnect config is empty")
         }
         protectSockets = protect
-        scheduleRestart("VPN service requested reconnect", generation)
+        // ConnectivityManager may report a validated underlying network again
+        // after a short radio/Wi-Fi transition even though both WWG layers are
+        // already carrying traffic. Keep the established TUN and verify useful
+        // DNS payload first; the monitor performs a transactional restart only
+        // after two complete failed rounds.
+        Log.i(
+            TAG,
+            "WWG_EVENT event=reconnect_check generation=$generation " +
+                "source=vpn_service action=verify_before_restart"
+        )
+        state.value = CONNECTED
+        connectionCheckRequests.trySend(Unit)
     }
 
     override fun requestConnectionCheck(reason: String) {
@@ -286,15 +407,90 @@ class Wwg : Protocol() {
     private suspend fun startChainLocked(config: JSONObject, vpnBuilder: Builder, expectedGeneration: Long) {
         check(!stopping && generation == expectedGeneration) { "WWG generation is obsolete" }
 
-        val underlayData = config.getJSONObject(UNDERLAY_CONFIG_DATA)
-        val overlayData = config.getJSONObject(OVERLAY_CONFIG_DATA)
-        val underlayConfig = WwgConfigParser().parseUnderlay(config, underlayData)
+        val effectiveConfig = prepareEffectiveConfig(config, expectedGeneration)
+        val underlayRuntime = startUnderlay(effectiveConfig)
+        underlayHandle = underlayRuntime.handle
+
+        val relayedConfig = buildRelayedOverlayConfig(
+            effectiveConfig,
+            underlayRuntime.relayPort,
+            expectedGeneration,
+        )
+        val currentOverlay = WwgOverlayAwg().also { child ->
+            overlayState.value = UNKNOWN
+            child.initialize(
+                context,
+                overlayState,
+                { message -> onOverlayError(message, generation) },
+                onStatusChanged
+            )
+        }
+        overlay = currentOverlay
+
+        Log.i(TAG, "Starting WWG overlay through $RELAY_HOST:${underlayRuntime.relayPort}")
+        currentOverlay.startVpn(relayedConfig, vpnBuilder, protectSockets ?: ::rejectProtection)
+        waitForState(overlayState, CONNECTED, AWG_HANDSHAKE_TIMEOUT_MS, "WWG overlay handshake timeout")
+
+        val initialHealth = healthCheck(INITIAL_VPN_NETWORK_TIMEOUT_MS, expectedGeneration)
+        if (!initialHealth.isUsable) {
+            Log.w(
+                TAG,
+                "WWG_EVENT event=initial_health_degraded generation=$expectedGeneration " +
+                    "networkFound=${initialHealth.networkFound} action=keep_tunnel"
+            )
+        }
+    }
+
+    private fun prepareEffectiveConfig(config: JSONObject, expectedGeneration: Long): JSONObject {
+        val effectiveConfig = JSONObject(config.toString())
+        val underlayData = effectiveConfig.getJSONObject(UNDERLAY_CONFIG_DATA)
+        val overlayData = effectiveConfig.getJSONObject(OVERLAY_CONFIG_DATA)
+        val configuredUnderlayMtu = underlayData.optString("mtu", "1280").toInt()
+        val configuredOverlayMtu = overlayData.optString("mtu", "1280").toInt()
+        val isV3 = usesAwgV3(underlayData)
+        val overlayS4 = overlayData.optString("S4", "0").toIntOrNull() ?: 0
+        val effectiveMtus = effectiveWwgMtus(
+            configuredUnderlayMtu,
+            configuredOverlayMtu,
+            isV3,
+            overlayS4,
+        )
+        if (effectiveMtus.underlay !in 576..1500) {
+            throw BadConfigException(
+                "WWG v3 entry MTU ${effectiveMtus.underlay} required for exit MTU " +
+                    "$configuredOverlayMtu and S4=$overlayS4 exceeds the supported range"
+            )
+        }
+        underlayData.put("mtu", effectiveMtus.underlay.toString())
+        overlayData.put("mtu", effectiveMtus.overlay.toString())
+        if (effectiveMtus.adjusted) {
+            Log.w(
+                TAG,
+                "WWG_EVENT event=mtu_adjusted generation=$expectedGeneration mode=v3 " +
+                    "configuredUnderlay=$configuredUnderlayMtu configuredOverlay=$configuredOverlayMtu " +
+                    "effectiveUnderlay=${effectiveMtus.underlay} effectiveOverlay=${effectiveMtus.overlay} " +
+                    "overlayS4=$overlayS4 reason=avoid_nested_fragmentation"
+            )
+        }
+        Log.i(
+            TAG,
+            "WWG_EVENT event=mtu_selected generation=$expectedGeneration " +
+                "mode=${if (isV3) "v3" else "v2"} underlay=${effectiveMtus.underlay} " +
+                "overlay=${effectiveMtus.overlay} overlayS4=$overlayS4"
+        )
+        return effectiveConfig
+    }
+
+    private fun startUnderlay(effectiveConfig: JSONObject): UnderlayRuntime {
+        val underlayData = effectiveConfig.getJSONObject(UNDERLAY_CONFIG_DATA)
+        val overlayData = effectiveConfig.getJSONObject(OVERLAY_CONFIG_DATA)
+        val underlayConfig = WwgConfigParser().parseUnderlay(effectiveConfig, underlayData)
         val overlayHost = overlayData.getString("hostName").trim()
         val overlayPort = overlayData.getInt("port")
         val localAddresses = underlayConfig.addresses.joinToString(",")
 
         Log.i(TAG, "Starting WWG underlay netstack")
-        underlayHandle = GoBackend.awgTurnOnNetstack(
+        val handle = GoBackend.awgTurnOnNetstack(
             UNDERLAY_IF_NAME,
             localAddresses,
             "",
@@ -303,35 +499,74 @@ class Wwg : Protocol() {
             overlayHost,
             overlayPort
         )
-        if (underlayHandle < 0) {
-            underlayHandle = -1
+        if (handle < 0) {
             throw VpnStartException("WWG underlay netstack creation failed")
         }
 
-        protectBackendSockets(underlayHandle)
-        val relayPort = GoBackend.awgGetRelayPort(underlayHandle)
-        if (relayPort !in 1..65535 || !GoBackend.awgIsRelayHealthy(underlayHandle)) {
-            throw VpnStartException("WWG netstack relay is not healthy")
+        try {
+            protectBackendSockets(handle)
+            val relayPort = GoBackend.awgGetRelayPort(handle)
+            if (relayPort !in 1..65535 || !GoBackend.awgIsRelayHealthy(handle)) {
+                throw VpnStartException("WWG netstack relay is not healthy")
+            }
+            return UnderlayRuntime(handle, relayPort)
+        } catch (e: Exception) {
+            runCatching { GoBackend.awgTurnOff(handle) }
+            throw e
         }
+    }
 
-        val relayedConfig = buildRelayedOverlayConfig(config, relayPort)
-        val currentOverlay = WwgOverlayAwg().also { child ->
-            overlayState.value = UNKNOWN
-            child.initialize(
-                context,
-                overlayState,
-                { message -> onOverlayError(message, expectedGeneration) },
-                onStatusChanged
+    /**
+     * Replaces the nested chain without first closing the active Android TUN.
+     * Closing that TUN caused Android to destroy WwgService and cancel the
+     * delayed retry, leaving the device offline indefinitely.
+     */
+    private suspend fun replaceChainLocked(
+        config: JSONObject,
+        vpnBuilder: Builder,
+        expectedGeneration: Long,
+    ) {
+        check(!stopping && generation == expectedGeneration) { "WWG generation is obsolete" }
+        val currentOverlay = overlay ?: throw VpnStartException("WWG overlay is unavailable for replacement")
+        val previousUnderlayHandle = underlayHandle
+        val effectiveConfig = prepareEffectiveConfig(config, expectedGeneration)
+        val replacementUnderlay = startUnderlay(effectiveConfig)
+
+        try {
+            val relayedConfig = buildRelayedOverlayConfig(
+                effectiveConfig,
+                replacementUnderlay.relayPort,
+                expectedGeneration,
             )
-        }
-        overlay = currentOverlay
+            overlayState.value = UNKNOWN
+            Log.i(
+                TAG,
+                "WWG_EVENT event=overlay_swap generation=$expectedGeneration " +
+                    "strategy=establish_before_stop"
+            )
+            currentOverlay.replaceWwgVpn(
+                relayedConfig,
+                vpnBuilder,
+                protectSockets ?: ::rejectProtection,
+            )
+            waitForState(overlayState, CONNECTED, AWG_HANDSHAKE_TIMEOUT_MS, "WWG overlay replacement handshake timeout")
+            underlayHandle = replacementUnderlay.handle
 
-        Log.i(TAG, "Starting WWG overlay through $RELAY_HOST:$relayPort")
-        currentOverlay.startVpn(relayedConfig, vpnBuilder, protectSockets ?: ::rejectProtection)
-        waitForState(overlayState, CONNECTED, AWG_HANDSHAKE_TIMEOUT_MS, "WWG overlay handshake timeout")
+            if (previousUnderlayHandle >= 0 && previousUnderlayHandle != replacementUnderlay.handle) {
+                runCatching { GoBackend.awgTurnOff(previousUnderlayHandle) }
+            }
 
-        if (!healthCheck(INITIAL_VPN_NETWORK_TIMEOUT_MS, expectedGeneration).isUsable) {
-            throw VpnStartException("WWG VPN-bound health check failed")
+            val health = healthCheck(INITIAL_VPN_NETWORK_TIMEOUT_MS, expectedGeneration)
+            if (!health.isUsable) {
+                Log.w(
+                    TAG,
+                    "WWG_EVENT event=post_restart_health_degraded generation=$expectedGeneration " +
+                        "networkFound=${health.networkFound} action=keep_tunnel"
+                )
+            }
+        } catch (e: Exception) {
+            runCatching { GoBackend.awgTurnOff(replacementUnderlay.handle) }
+            throw e
         }
     }
 
@@ -418,6 +653,7 @@ class Wwg : Protocol() {
             return
         }
 
+        var claimedRestartGeneration = expectedGeneration
         restartJob = scope.launch {
             try {
                 lifecycleMutex.withLock {
@@ -429,6 +665,12 @@ class Wwg : Protocol() {
                     val (attempt, retryDelay) = retryPolicy.nextDelay()
                     generation += 1
                     val restartGeneration = generation
+                    // Keep the in-flight marker claimed for the replacement
+                    // generation as well. Rapid network callbacks must not
+                    // queue a second restart while this swap is still waiting
+                    // for its handshake or retrying a failed replacement.
+                    restartRequestedGeneration.compareAndSet(expectedGeneration, restartGeneration)
+                    claimedRestartGeneration = restartGeneration
                     connectedAtElapsed = 0L
                     state.value = RECONNECTING
                     Log.w(
@@ -437,13 +679,51 @@ class Wwg : Protocol() {
                             "sourceGeneration=$expectedGeneration attempt=$attempt delayMs=$retryDelay " +
                             "reason=${logValue(reason)}"
                     )
-                    closeChainLocked()
                     delay(retryDelay)
-                    restartRequestedGeneration.compareAndSet(expectedGeneration, -1L)
-                    startWithRetryLocked(JSONObject(config.toString()), restartGeneration, null)
+
+                    while (currentCoroutineContext().isActive && !stopping && generation == restartGeneration) {
+                        try {
+                            replaceChainLocked(
+                                JSONObject(config.toString()),
+                                newVpnBuilder(),
+                                restartGeneration,
+                            )
+                            state.value = CONNECTED
+                            connectedAtElapsed = SystemClock.elapsedRealtime()
+                            launchMonitor(restartGeneration)
+                            Log.i(
+                                TAG,
+                                "WWG_EVENT event=connected generation=$restartGeneration " +
+                                    "retryAttempt=${retryPolicy.currentAttempt} restartStrategy=overlay_swap"
+                            )
+                            return@withLock
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            if (isFatalConfigurationError(e)) {
+                                Log.e(
+                                    TAG,
+                                    "WWG_EVENT event=fatal_restart_error generation=$restartGeneration " +
+                                        "reason=${logValue(e.message ?: e.toString())}"
+                                )
+                                onError(e.message ?: e.toString())
+                                state.value = DISCONNECTED
+                                return@withLock
+                            }
+
+                            val (retryAttempt, nextDelay) = retryPolicy.nextDelay()
+                            Log.w(
+                                TAG,
+                                "WWG_EVENT event=restart_retry generation=$restartGeneration " +
+                                    "attempt=$retryAttempt delayMs=$nextDelay " +
+                                    "reason=${logValue(e.message ?: e.toString())}"
+                            )
+                            delay(nextDelay)
+                        }
+                    }
                 }
             } finally {
-                restartRequestedGeneration.compareAndSet(expectedGeneration, -1L)
+                restartRequestedGeneration.compareAndSet(claimedRestartGeneration, -1L)
             }
         }
     }
@@ -493,13 +773,36 @@ class Wwg : Protocol() {
         }
     }
 
-    private fun buildRelayedOverlayConfig(config: JSONObject, relayPort: Int): JSONObject {
+    private fun buildRelayedOverlayConfig(
+        config: JSONObject,
+        relayPort: Int,
+        expectedGeneration: Long,
+    ): JSONObject {
         val result = JSONObject(config.toString())
         val overlayData = JSONObject(result.getJSONObject(OVERLAY_CONFIG_DATA).toString()).apply {
             put("hostName", RELAY_HOST)
             put("port", relayPort)
             put("isObfuscationEnabled", true)
         }
+
+        // Android sends these resolver packets into the exit TUN. The exit AWG
+        // datagrams then use the localhost relay backed by the entry netstack,
+        // which guarantees DNS traverses overlay and underlay in that order.
+        // Explicit host routes also preserve that invariant for split profiles
+        // whose allowed_ips do not contain a default route.
+        val allowedIps = overlayData.getJSONArray("allowed_ips")
+        val allowedIpStrings = (0 until allowedIps.length()).map { allowedIps.getString(it) }
+        val dnsServers = listOf(result.optString("dns1"), result.optString("dns2"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        val addedRoutes = requiredDnsHostRoutes(dnsServers, allowedIpStrings)
+        addedRoutes.forEach(allowedIps::put)
+        overlayData.put("allowed_ips", allowedIps)
+        Log.i(
+            TAG,
+            "WWG_EVENT event=dns_route generation=$expectedGeneration chain=overlay_then_underlay " +
+                "dnsCount=${dnsServers.size} addedHostRoutes=${addedRoutes.size}"
+        )
         result.put(AWG_CONFIG_DATA, overlayData)
         return result
     }
@@ -525,8 +828,10 @@ class Wwg : Protocol() {
     ): HealthCheckResult = withContext(Dispatchers.IO) {
         val network = findVpnNetwork(networkWaitMs)
             ?: return@withContext HealthCheckResult(0, HEALTHCHECK_TARGETS.size, false)
-        val successes = HEALTHCHECK_TARGETS.count { target ->
-            probe(network, target, expectedGeneration)
+        val successes = supervisorScope {
+            HEALTHCHECK_TARGETS.map { target ->
+                async { probe(network, target, expectedGeneration) }
+            }.awaitAll().count { it }
         }
         HealthCheckResult(successes, HEALTHCHECK_TARGETS.size, true)
     }
@@ -548,21 +853,33 @@ class Wwg : Protocol() {
     }
 
     private fun probe(network: Network, target: HealthCheckTarget, expectedGeneration: Long): Boolean = try {
-        network.socketFactory.createSocket().use { socket ->
-            socket.connect(InetSocketAddress(target.host, target.port), HEALTH_PROBE_TIMEOUT_MS)
+        val transactionId = ThreadLocalRandom.current().nextInt(0x10000)
+        val query = buildDnsHealthQuery(transactionId)
+        DatagramSocket().use { socket ->
+            network.bindSocket(socket)
+            socket.soTimeout = HEALTH_PROBE_TIMEOUT_MS
+            val resolver = InetAddress.getByName(target.host)
+            socket.send(DatagramPacket(query, query.size, resolver, DNS_PORT))
+
+            val response = ByteArray(1500)
+            val packet = DatagramPacket(response, response.size)
+            socket.receive(packet)
+            if (packet.address != resolver || !isSuccessfulDnsHealthResponse(response, packet.length, transactionId)) {
+                throw VpnException("Invalid DNS health response")
+            }
         }
         true
     } catch (e: Exception) {
         val now = SystemClock.elapsedRealtime()
         if (shouldLogHealthEvent(
-                "probe:$expectedGeneration:${target.host}:${target.port}",
+                "probe:$expectedGeneration:${target.host}:$DNS_PORT",
                 now
             )
         ) {
             Log.w(
                 TAG,
                 "WWG_EVENT event=probe_failure generation=$expectedGeneration " +
-                    "target=${target.host} transport=tcp port=${target.port} " +
+                    "target=${target.host} transport=udp_dns port=$DNS_PORT qname=$DNS_HEALTH_NAME " +
                     "reason=${logValue(e.message ?: e.toString())}"
             )
         }
@@ -707,4 +1024,8 @@ private class WwgConfigParser : Awg() {
 
 private class WwgOverlayAwg : Awg() {
     override val ifName: String = OVERLAY_IF_NAME
+
+    fun replaceWwgVpn(config: JSONObject, vpnBuilder: Builder, protect: (Int) -> Boolean) {
+        replaceVpnWithConfig(config, vpnBuilder, protect)
+    }
 }

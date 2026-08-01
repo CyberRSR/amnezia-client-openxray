@@ -113,7 +113,7 @@ QMap<DockerContainer, QString> ContainerUtils::containerDescriptions()
              { DockerContainer::OWG,
                QObject::tr("OWG combines OpenVPN and AmneziaWG v2 into a chained Android VPN profile.") },
              { DockerContainer::WWG,
-               QObject::tr("WWG chains two AmneziaWG v2 tunnels in one Android VPN profile.") },
+               QObject::tr("WWG chains two matching AmneziaWG v2 or v3 tunnels in one Android VPN profile.") },
              { DockerContainer::Xray,
                QObject::tr("XRay with REALITY masks VPN traffic as web traffic and protects against active probing. "
                            "It is highly resistant to detection and offers high speed.") },

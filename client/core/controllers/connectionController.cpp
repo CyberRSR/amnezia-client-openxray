@@ -312,9 +312,12 @@ QJsonObject ConnectionController::createConnectionConfiguration(const QPair<QStr
             return vpnConfiguration;
         }
 
-        const auto prepareAwg = [](QJsonObject config) {
+        const bool isV3 = wwgConfig->isValidV3();
+        const auto prepareAwg = [isV3](QJsonObject config, bool isUnderlay) {
             if (config.value(configKey::mtu).toString().isEmpty()) {
-                config[configKey::mtu] = protocols::awg::defaultMtu;
+                config[configKey::mtu] = isV3 && isUnderlay
+                        ? protocols::wwg::defaultV3UnderlayMtu
+                        : protocols::awg::defaultMtu;
             }
             // AWG3 deliberately retains the AWG protocol_version value "2".
             config[configKey::protocolVersion] = protocols::awg::awgV2;
@@ -322,8 +325,8 @@ QJsonObject ConnectionController::createConnectionConfiguration(const QPair<QStr
             return config;
         };
 
-        const QJsonObject underlay = prepareAwg(wwgConfig->underlayClientConfigJson());
-        const QJsonObject overlay = prepareAwg(wwgConfig->overlayClientConfigJson());
+        const QJsonObject underlay = prepareAwg(wwgConfig->underlayClientConfigJson(), true);
+        const QJsonObject overlay = prepareAwg(wwgConfig->overlayClientConfigJson(), false);
         vpnConfiguration.insert(configKey::awgUnderlayConfigData, underlay);
         vpnConfiguration.insert(configKey::awgOverlayConfigData, overlay);
         vpnConfiguration[configKey::vpnProto] = QStringLiteral("WWG");

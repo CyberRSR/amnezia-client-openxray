@@ -6,6 +6,7 @@ import android.net.ConnectivityManager.NetworkCallback
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
+import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN
 import android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED
 import android.net.NetworkRequest
 import android.os.Build
@@ -36,6 +37,10 @@ class NetworkState(
     private val networkRequest: NetworkRequest by lazy(NONE) {
         NetworkRequest.Builder()
             .addCapability(NET_CAPABILITY_INTERNET)
+            // A VPN validating itself must not be interpreted as a new
+            // underlying network. That feedback loop used to trigger an
+            // unnecessary protocol reconnect under ordinary VPN load.
+            .addCapability(NET_CAPABILITY_NOT_VPN)
             .build()
     }
 
