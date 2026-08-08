@@ -108,6 +108,12 @@ namespace amnezia
         constexpr QLatin1String wwg("wwg");
         constexpr QLatin1String underlayAwg("underlay_awg");
         constexpr QLatin1String overlayAwg("overlay_awg");
+        constexpr QLatin1String wwgProvisioning("provisioning");
+        constexpr QLatin1String wwgProvisioningUnderlay("underlay");
+        constexpr QLatin1String wwgProvisioningOverlay("overlay");
+        constexpr QLatin1String wwgProvisioningUrl("url");
+        constexpr QLatin1String wwgProvisioningToken("token");
+        constexpr QLatin1String wwgProvisioningCertificateSha256("certificate_sha256");
         constexpr QLatin1String awgUnderlayConfigData("awg_underlay_config_data");
         constexpr QLatin1String awgOverlayConfigData("awg_overlay_config_data");
         constexpr QLatin1String vless("vless");

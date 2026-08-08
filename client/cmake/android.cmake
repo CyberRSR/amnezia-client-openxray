@@ -62,6 +62,36 @@ endif()
 
 find_package(awg-android REQUIRED)
 set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS ${AMNEZIA_ANDROID_LIBWG_PATH} ${AMNEZIA_ANDROID_LIBWG_QUICK_PATH})
+
+# Qt's Android TLS plugin loads OpenSSL dynamically.  The Conan dependency is
+# intentionally static for libssh, so package the pinned Android binaries
+# recommended by Qt in addition to the linked dependency.
+include(FetchContent)
+FetchContent_Declare(
+    android_openssl
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    URL https://github.com/KDAB/android_openssl/archive/b71f1470962019bd89534a2919f5925f93bc5779.zip
+    URL_HASH SHA256=9277d62ecdb4809801e2c369e0a639c154e0d9137e8d60863b44bf07d16ed5b3
+)
+FetchContent_MakeAvailable(android_openssl)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_amnezia_android_openssl_root "${android_openssl_SOURCE_DIR}/no-asm")
+else()
+    set(_amnezia_android_openssl_root "${android_openssl_SOURCE_DIR}")
+endif()
+set(_amnezia_android_openssl_dir
+    "${_amnezia_android_openssl_root}/ssl_3/${CMAKE_ANDROID_ARCH_ABI}")
+set(_amnezia_android_libcrypto "${_amnezia_android_openssl_dir}/libcrypto_3.so")
+set(_amnezia_android_libssl "${_amnezia_android_openssl_dir}/libssl_3.so")
+if(NOT EXISTS "${_amnezia_android_libcrypto}" OR NOT EXISTS "${_amnezia_android_libssl}")
+    message(FATAL_ERROR "Pinned Android OpenSSL libraries are missing for ${CMAKE_ANDROID_ARCH_ABI}")
+endif()
+set_property(TARGET ${PROJECT} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS
+    "${_amnezia_android_libcrypto}"
+    "${_amnezia_android_libssl}"
+)
+
 if(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a" AND APP_ANDROID_MIN_SDK LESS_EQUAL 26)
     string(TOUPPER "${CMAKE_BUILD_TYPE}" _awg_config)
     get_target_property(AMNEZIA_ANDROID_LIBWG_GO_PATH amnezia::awg-android IMPORTED_LOCATION_${_awg_config})

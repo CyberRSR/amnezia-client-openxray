@@ -1,0 +1,26 @@
+[Unit]
+Description=WWG capability-scoped peer provisioner
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /opt/wwg-peer-provisioner/provisioner.py --config /opt/wwg-peer-provisioner/config.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/wwg-peer-provisioner -/opt/amnezia-wwg-entry -/opt/amnezia-wwg-entry-v3 -/opt/amnezia-awg3
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RuntimeDirectory=wwg-peer-provisioner
+RuntimeDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

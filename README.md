@@ -47,10 +47,10 @@
 
 ## WWG branch additions
 
-- Android-only WWG chains two AmneziaWG v2 profiles without creating two Android VPN interfaces: the entry tunnel runs in the Go netstack and the exit tunnel owns the single system VPN interface.
-- WWG imports the entry `.conf` first and the exit `.conf` second. Both configs must declare AmneziaWG protocol version 2 and contain the complete v2 parameter set.
-- A serialized lifecycle monitor checks the relay continuously and probes the Android VPN network every five seconds. Two failed probe rounds trigger an unlimited full reconnect sequence.
-- Portable `.vpn` export/import preserves both AWG v2 layers. Private deployment profiles, keys, and server credentials are never part of the source tree or release artifacts.
+- Android-only WWG chains two matching AmneziaWG profiles (v2/v2 or v3/v3): the entry tunnel runs in the Go netstack and the exit tunnel owns the single system VPN interface. AWG3 keeps `protocol_version=2` and is detected by its v3 fields.
+- DNS and payload traffic traverse both layers. The serialized monitor probes the VPN every five seconds, ignores partial endpoint failures, and uses a bounded jittered reconnect backoff after two fully failed rounds.
+- Exporting a managed WWG profile to `.vpn` or QR creates independent keys, PSKs, `/32` addresses, and peers on both servers; the donor remains usable at the same time. Legacy profiles without the scoped provisioning capability still connect but must be reissued before they can be exported safely.
+- Exported profiles contain private connection material and must be handled as secrets. Live profiles, keys, capability tokens, and server credentials are never part of the source tree or public release artifacts.
 - See [WWG architecture and profile format](docs/WWG.md).
 
 ## Links

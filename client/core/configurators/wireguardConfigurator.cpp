@@ -9,6 +9,7 @@
 #include <QTemporaryFile>
 
 #include <openssl/pem.h>
+#include <openssl/crypto.h>
 #include <openssl/rand.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
@@ -48,32 +49,42 @@ WireguardConfigurator::WireguardConfigurator(SshSession* sshSession, bool isAwg,
 
 WireguardConfigurator::ConnectionData WireguardConfigurator::genClientKeys()
 {
-    // TODO review
-    constexpr size_t EDDSA_KEY_LENGTH = 32;
+    constexpr size_t X25519_KEY_LENGTH = 32;
 
     ConnectionData connData;
 
-    unsigned char buff[EDDSA_KEY_LENGTH];
-    int ret = RAND_priv_bytes(buff, EDDSA_KEY_LENGTH);
-    if (ret <= 0)
+    unsigned char seed[X25519_KEY_LENGTH] = {};
+    if (RAND_priv_bytes(seed, X25519_KEY_LENGTH) != 1) {
+        OPENSSL_cleanse(seed, sizeof(seed));
         return connData;
+    }
 
-    EVP_PKEY *pKey = EVP_PKEY_new();
-    q_check_ptr(pKey);
-    pKey = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, NULL, &buff[0], EDDSA_KEY_LENGTH);
+    EVP_PKEY *pKey = EVP_PKEY_new_raw_private_key(
+            EVP_PKEY_X25519, nullptr, seed, X25519_KEY_LENGTH);
+    OPENSSL_cleanse(seed, sizeof(seed));
+    if (!pKey) {
+        return connData;
+    }
 
-    size_t keySize = EDDSA_KEY_LENGTH;
+    size_t privateKeySize = X25519_KEY_LENGTH;
+    size_t publicKeySize = X25519_KEY_LENGTH;
+    unsigned char privateKey[X25519_KEY_LENGTH] = {};
+    unsigned char publicKey[X25519_KEY_LENGTH] = {};
 
-    // save private key
-    unsigned char priv[EDDSA_KEY_LENGTH];
-    EVP_PKEY_get_raw_private_key(pKey, priv, &keySize);
-    connData.clientPrivKey = QByteArray::fromRawData((char *)priv, keySize).toBase64();
+    const bool keysExtracted = EVP_PKEY_get_raw_private_key(pKey, privateKey, &privateKeySize) == 1
+            && EVP_PKEY_get_raw_public_key(pKey, publicKey, &publicKeySize) == 1
+            && privateKeySize == X25519_KEY_LENGTH
+            && publicKeySize == X25519_KEY_LENGTH;
+    if (keysExtracted) {
+        connData.clientPrivKey = QByteArray(
+                reinterpret_cast<const char *>(privateKey), privateKeySize).toBase64();
+        connData.clientPubKey = QByteArray(
+                reinterpret_cast<const char *>(publicKey), publicKeySize).toBase64();
+    }
 
-    // save public key
-    unsigned char pub[EDDSA_KEY_LENGTH];
-    EVP_PKEY_get_raw_public_key(pKey, pub, &keySize);
-    connData.clientPubKey = QByteArray::fromRawData((char *)pub, keySize).toBase64();
-
+    OPENSSL_cleanse(privateKey, sizeof(privateKey));
+    OPENSSL_cleanse(publicKey, sizeof(publicKey));
+    EVP_PKEY_free(pKey);
     return connData;
 }
 

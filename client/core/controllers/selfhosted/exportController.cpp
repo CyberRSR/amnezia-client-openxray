@@ -214,6 +214,30 @@ ExportController::ExportResult ExportController::generateStoredConnectionConfig(
     SelfHostedUserServerConfig exportConfig;
     const serverConfigUtils::ConfigType kind = m_serversRepository->serverKind(serverId);
 
+    const auto prepareStoredContainer = [&](ContainerConfig &storedContainer) {
+        if (!isStoredContainerExportable(storedContainer)) {
+            result.errorCode = ErrorCode::InternalError;
+            return false;
+        }
+        if (container != DockerContainer::WWG) {
+            return true;
+        }
+
+        SshSession unusedSshSession;
+        auto configurator = ConfiguratorBase::create(Proto::WWG, &unusedSshSession);
+        const DnsSettings dnsSettings = {
+            m_appSettingsRepository->primaryDns(),
+            m_appSettingsRepository->secondaryDns(),
+        };
+        const ProtocolConfig uniqueProtocolConfig = configurator->createConfig(
+                ServerCredentials {}, DockerContainer::WWG, storedContainer, dnsSettings, result.errorCode);
+        if (result.errorCode != ErrorCode::NoError) {
+            return false;
+        }
+        storedContainer.protocolConfig = uniqueProtocolConfig;
+        return true;
+    };
+
     switch (kind) {
     case serverConfigUtils::SelfHostedAdmin: {
         auto adminConfig = m_serversRepository->selfHostedAdminConfig(serverId);
@@ -222,9 +246,8 @@ ExportController::ExportResult ExportController::generateStoredConnectionConfig(
             return result;
         }
 
-        const ContainerConfig containerConfig = adminConfig->containerConfig(container);
-        if (!isStoredContainerExportable(containerConfig)) {
-            result.errorCode = ErrorCode::InternalError;
+        ContainerConfig containerConfig = adminConfig->containerConfig(container);
+        if (!prepareStoredContainer(containerConfig)) {
             return result;
         }
 
@@ -240,9 +263,8 @@ ExportController::ExportResult ExportController::generateStoredConnectionConfig(
             return result;
         }
 
-        const ContainerConfig containerConfig = userConfig->containerConfig(container);
-        if (!isStoredContainerExportable(containerConfig)) {
-            result.errorCode = ErrorCode::InternalError;
+        ContainerConfig containerConfig = userConfig->containerConfig(container);
+        if (!prepareStoredContainer(containerConfig)) {
             return result;
         }
 
@@ -258,9 +280,8 @@ ExportController::ExportResult ExportController::generateStoredConnectionConfig(
             return result;
         }
 
-        const ContainerConfig containerConfig = nativeConfig->containerConfig(container);
-        if (!isStoredContainerExportable(containerConfig)) {
-            result.errorCode = ErrorCode::InternalError;
+        ContainerConfig containerConfig = nativeConfig->containerConfig(container);
+        if (!prepareStoredContainer(containerConfig)) {
             return result;
         }
 

@@ -1,0 +1,32 @@
+{
+  "listen_host": "0.0.0.0",
+  "listen_port": 55426,
+  "tls_certificate": "/opt/wwg-peer-provisioner/tls.crt",
+  "tls_private_key": "/opt/wwg-peer-provisioner/tls.key",
+  "rollback_secret_file": "/opt/wwg-peer-provisioner/rollback.secret",
+  "lock_directory": "/run/wwg-peer-provisioner",
+  "rate_limit_requests": 20,
+  "rate_limit_window_seconds": 60,
+  "profiles": [
+    {
+      "token_sha256": "REPLACE_WITH_SHA256_OF_RANDOM_CAPABILITY_TOKEN",
+      "container": "amnezia-wwg-entry-v3",
+      "interface": "awg0",
+      "awg_binary": "awg",
+      "config_path": "/opt/amnezia-wwg-entry-v3/awg0.conf",
+      "subnet": "10.9.1.0/24",
+      "server_public_key": "REPLACE_WITH_INTERFACE_PUBLIC_KEY",
+      "max_peers": 128
+    },
+    {
+      "token_sha256": "REPLACE_WITH_SHA256_OF_ANOTHER_RANDOM_CAPABILITY_TOKEN",
+      "container": "amnezia-awg2",
+      "interface": "awg0",
+      "awg_binary": "awg",
+      "container_config_path": "/opt/amnezia/awg/awg0.conf",
+      "subnet": "10.8.1.0/24",
+      "server_public_key": "REPLACE_WITH_INTERFACE_PUBLIC_KEY",
+      "max_peers": 128
+    }
+  ]
+}

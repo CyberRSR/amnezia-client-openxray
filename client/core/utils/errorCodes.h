@@ -40,6 +40,11 @@ namespace amnezia
         XrayRealityKeysReadFailed = 217,
         ServerContainerRuntimeNotSupported = 218,
         ContainerRuntimeServiceNotRunning = 219,
+        WwgProvisioningUnavailable = 220,
+        WwgProvisioningAuthenticationError = 221,
+        WwgProvisioningInvalidResponse = 222,
+        WwgProvisioningLimitError = 223,
+        WwgProvisioningRollbackError = 224,
 
         // Ssh connection errors
         SshRequestDeniedError = 300,

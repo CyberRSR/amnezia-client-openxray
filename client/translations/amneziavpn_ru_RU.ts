@@ -3052,6 +3052,16 @@ Thank you for staying with us!</source>
         <source>Cancel</source>
         <translation>Отменить</translation>
     </message>
+    <message>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="175"/>
+        <source>Create a separate WWG profile</source>
+        <translation>Создать отдельный профиль WWG</translation>
+    </message>
+    <message>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="177"/>
+        <source>Creates new keys and peers on both WWG servers. The profile on this device remains unchanged.</source>
+        <translation>Создаёт новые ключи и peer на обоих серверах WWG. Профиль на этом устройстве не изменяется.</translation>
+    </message>
 </context>
 <context>
     <name>PageSettingsServersList</name>
@@ -4624,6 +4634,31 @@ Thank you for staying with us!</source>
         <location filename="../core/errorstrings.cpp" line="93"/>
         <source>QFile error: The operation was aborted</source>
         <translation>Ошибка QFile: операция была прервана</translation>
+    </message>
+    <message>
+        <location filename="../core/utils/errorStrings.cpp" line="229"/>
+        <source>This WWG profile cannot create a separate peer, or the peer provisioning service is unavailable</source>
+        <translation>Этот профиль WWG не может создать отдельный peer, либо сервис регистрации peer недоступен</translation>
+    </message>
+    <message>
+        <location filename="../core/utils/errorStrings.cpp" line="231"/>
+        <source>The WWG peer provisioning capability was rejected by the server</source>
+        <translation>Сервер отклонил право на создание нового peer WWG</translation>
+    </message>
+    <message>
+        <location filename="../core/utils/errorStrings.cpp" line="233"/>
+        <source>The WWG peer provisioning service returned an invalid response</source>
+        <translation>Сервис регистрации peer WWG вернул некорректный ответ</translation>
+    </message>
+    <message>
+        <location filename="../core/utils/errorStrings.cpp" line="235"/>
+        <source>No free WWG peer addresses are available, or the sharing limit was reached</source>
+        <translation>Нет свободных адресов для peer WWG либо достигнут лимит экспорта</translation>
+    </message>
+    <message>
+        <location filename="../core/utils/errorStrings.cpp" line="237"/>
+        <source>A WWG peer was only partially created; server cleanup is required</source>
+        <translation>Peer WWG создан только частично; требуется очистка на сервере</translation>
     </message>
     <message>
         <location filename="../core/errorstrings.cpp" line="97"/>

@@ -3,7 +3,9 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QByteArray>
+#include <QRegularExpression>
 #include <QStringList>
+#include <QUrl>
 #include <algorithm>
 #include <limits>
 
@@ -12,6 +14,61 @@
 
 namespace amnezia
 {
+
+QJsonObject WwgProvisioningEndpoint::toJson() const
+{
+    QJsonObject obj;
+    obj[configKey::wwgProvisioningUrl] = url;
+    obj[configKey::wwgProvisioningToken] = token;
+    obj[configKey::wwgProvisioningCertificateSha256] = certificateSha256;
+    return obj;
+}
+
+WwgProvisioningEndpoint WwgProvisioningEndpoint::fromJson(const QJsonObject &json)
+{
+    WwgProvisioningEndpoint endpoint;
+    endpoint.url = json.value(configKey::wwgProvisioningUrl).toString();
+    endpoint.token = json.value(configKey::wwgProvisioningToken).toString();
+    endpoint.certificateSha256 = json.value(configKey::wwgProvisioningCertificateSha256).toString();
+    return endpoint;
+}
+
+bool WwgProvisioningEndpoint::isValid() const
+{
+    const QUrl parsedUrl(url.trimmed());
+    if (!parsedUrl.isValid() || parsedUrl.scheme() != QStringLiteral("https")
+            || parsedUrl.host().isEmpty() || !parsedUrl.userInfo().isEmpty()
+            || parsedUrl.hasFragment() || parsedUrl.hasQuery()) {
+        return false;
+    }
+
+    const QString normalizedPin = QString(certificateSha256).remove(QLatin1Char(':')).trimmed().toLower();
+    static const QRegularExpression sha256Pattern(QStringLiteral("^[0-9a-f]{64}$"));
+    return token.trimmed().size() >= 32 && sha256Pattern.match(normalizedPin).hasMatch();
+}
+
+QJsonObject WwgProvisioningConfig::toJson() const
+{
+    QJsonObject obj;
+    obj[configKey::wwgProvisioningUnderlay] = underlay.toJson();
+    obj[configKey::wwgProvisioningOverlay] = overlay.toJson();
+    return obj;
+}
+
+WwgProvisioningConfig WwgProvisioningConfig::fromJson(const QJsonObject &json)
+{
+    WwgProvisioningConfig config;
+    config.underlay = WwgProvisioningEndpoint::fromJson(
+            json.value(configKey::wwgProvisioningUnderlay).toObject());
+    config.overlay = WwgProvisioningEndpoint::fromJson(
+            json.value(configKey::wwgProvisioningOverlay).toObject());
+    return config;
+}
+
+bool WwgProvisioningConfig::isValid() const
+{
+    return underlay.isValid() && overlay.isValid();
+}
 
 namespace
 {
@@ -134,6 +191,9 @@ QJsonObject WwgProtocolConfig::toJson() const
     QJsonObject obj;
     obj[configKey::underlayAwg] = underlayAwgConfig.toJson();
     obj[configKey::overlayAwg] = overlayAwgConfig.toJson();
+    if (provisioning.has_value()) {
+        obj[configKey::wwgProvisioning] = provisioning->toJson();
+    }
     return obj;
 }
 
@@ -142,6 +202,10 @@ WwgProtocolConfig WwgProtocolConfig::fromJson(const QJsonObject &json)
     WwgProtocolConfig config;
     config.underlayAwgConfig = AwgProtocolConfig::fromJson(json.value(configKey::underlayAwg).toObject());
     config.overlayAwgConfig = AwgProtocolConfig::fromJson(json.value(configKey::overlayAwg).toObject());
+    const QJsonObject provisioningJson = json.value(configKey::wwgProvisioning).toObject();
+    if (!provisioningJson.isEmpty()) {
+        config.provisioning = WwgProvisioningConfig::fromJson(provisioningJson);
+    }
     return config;
 }
 
@@ -216,6 +280,11 @@ QString WwgProtocolConfig::validationError() const
         }
     }
     return {};
+}
+
+bool WwgProtocolConfig::canProvisionPeers() const
+{
+    return provisioning.has_value() && provisioning->isValid();
 }
 
 void WwgProtocolConfig::clearClientConfig()

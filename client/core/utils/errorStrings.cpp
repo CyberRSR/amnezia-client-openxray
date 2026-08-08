@@ -41,6 +41,11 @@ QString errorString(ErrorCode code) {
         break;
     case(ErrorCode::ServerContainerRuntimeNotSupported): errorMessage = QObject::tr("Server error: The default container runtime available for installation on this server is not supported.\n Install Docker Engine on the server manually and try again."); break;
     case(ErrorCode::ContainerRuntimeServiceNotRunning): errorMessage = QObject::tr("Container runtime error: The container runtime service is not running.\n Check the container runtime service on the server, or wait about a minute and try again."); break;
+    case(ErrorCode::WwgProvisioningUnavailable): errorMessage = QObject::tr("This WWG profile cannot create a separate peer, or the peer provisioning service is unavailable"); break;
+    case(ErrorCode::WwgProvisioningAuthenticationError): errorMessage = QObject::tr("The WWG peer provisioning capability was rejected by the server"); break;
+    case(ErrorCode::WwgProvisioningInvalidResponse): errorMessage = QObject::tr("The WWG peer provisioning service returned an invalid response"); break;
+    case(ErrorCode::WwgProvisioningLimitError): errorMessage = QObject::tr("No free WWG peer addresses are available, or the sharing limit was reached"); break;
+    case(ErrorCode::WwgProvisioningRollbackError): errorMessage = QObject::tr("A WWG peer was only partially created; server cleanup is required"); break;
 
     // Libssh errors
     case(ErrorCode::SshRequestDeniedError): errorMessage = QObject::tr("SSH request was denied"); break;

@@ -8,6 +8,25 @@
 namespace amnezia
 {
 
+struct WwgProvisioningEndpoint {
+    QString url;
+    QString token;
+    QString certificateSha256;
+
+    QJsonObject toJson() const;
+    static WwgProvisioningEndpoint fromJson(const QJsonObject &json);
+    bool isValid() const;
+};
+
+struct WwgProvisioningConfig {
+    WwgProvisioningEndpoint underlay;
+    WwgProvisioningEndpoint overlay;
+
+    QJsonObject toJson() const;
+    static WwgProvisioningConfig fromJson(const QJsonObject &json);
+    bool isValid() const;
+};
+
 struct WwgProtocolConfig {
     enum class Mode {
         Invalid,
@@ -17,6 +36,7 @@ struct WwgProtocolConfig {
 
     AwgProtocolConfig underlayAwgConfig;
     AwgProtocolConfig overlayAwgConfig;
+    std::optional<WwgProvisioningConfig> provisioning;
 
     QJsonObject toJson() const;
     static WwgProtocolConfig fromJson(const QJsonObject &json);
@@ -28,6 +48,7 @@ struct WwgProtocolConfig {
     Mode mode() const;
     QString modeName() const;
     QString validationError() const;
+    bool canProvisionPeers() const;
     void clearClientConfig();
 
     QJsonObject underlayClientConfigJson() const;

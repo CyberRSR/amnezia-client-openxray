@@ -21,6 +21,7 @@ PageType {
     property bool isClearCacheVisible: !isUnsupportedContainer && ServersUiController.isProcessedServerHasWriteAccess() && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
     property bool isStoredConnectionExportVisible: !ServersUiController.isServerFromApi(ServersUiController.processedServerId)
                                                    && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
+    property bool isWwg: ContainerProps.containerTypeToString(ServersUiController.processedContainerIndex) === "wwg"
 
     Connections {
         target: ExportController
@@ -171,7 +172,10 @@ PageType {
 
                 visible: root.isStoredConnectionExportVisible
 
-                text: qsTr("Export saved connection")
+                text: root.isWwg ? qsTr("Create a separate WWG profile") : qsTr("Export saved connection")
+                descriptionText: root.isWwg
+                                 ? qsTr("Creates new keys and peers on both WWG servers. The profile on this device remains unchanged.")
+                                 : ""
                 rightImageSource: "qrc:/images/controls/chevron-right.svg"
 
                 clickedFunction: function() {

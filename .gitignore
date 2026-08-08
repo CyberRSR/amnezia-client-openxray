@@ -156,3 +156,7 @@ deploy/artifacts-local/
 deploy/artifacts-win11-x64/
 deploy/artifacts-win11-x64-current/
 
+# Python test/runtime caches
+__pycache__/
+*.py[cod]
+

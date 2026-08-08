@@ -63,6 +63,18 @@ WwgProtocolConfig makeWwg(bool v3)
     config.overlayAwgConfig.clientConfig->clientIp = QStringLiteral("10.8.2.2/32");
     return config;
 }
+
+WwgProvisioningConfig makeProvisioning()
+{
+    WwgProvisioningConfig provisioning;
+    provisioning.underlay.url = QStringLiteral("https://entry.example.test:55426/v1");
+    provisioning.underlay.token = QString(48, QLatin1Char('a'));
+    provisioning.underlay.certificateSha256 = QString(64, QLatin1Char('b'));
+    provisioning.overlay.url = QStringLiteral("https://exit.example.test:35163/v1");
+    provisioning.overlay.token = QString(48, QLatin1Char('c'));
+    provisioning.overlay.certificateSha256 = QString(64, QLatin1Char('d'));
+    return provisioning;
+}
 } // namespace
 
 class WwgProtocolConfigTest : public QObject
@@ -159,6 +171,46 @@ private slots:
 
         changed.rekeyTimeout = QStringLiteral("9-12");
         QVERIFY(!baseline.hasEqualServerSettings(changed));
+    }
+
+    void preservesValidatedProvisioningCapability()
+    {
+        WwgProtocolConfig config = makeWwg(true);
+        config.provisioning = makeProvisioning();
+        QVERIFY(config.canProvisionPeers());
+
+        const WwgProtocolConfig restored = WwgProtocolConfig::fromJson(config.toJson());
+        QVERIFY(restored.canProvisionPeers());
+        QCOMPARE(restored.provisioning->underlay.url, config.provisioning->underlay.url);
+        QCOMPARE(restored.provisioning->overlay.token, config.provisioning->overlay.token);
+        QCOMPARE(restored.provisioning->overlay.certificateSha256,
+                 config.provisioning->overlay.certificateSha256);
+    }
+
+    void rejectsUnsafeProvisioningCapability()
+    {
+        WwgProtocolConfig config = makeWwg(true);
+        config.provisioning = makeProvisioning();
+        config.provisioning->underlay.url = QStringLiteral("http://entry.example.test:55426/v1");
+        QVERIFY(!config.canProvisionPeers());
+
+        config.provisioning = makeProvisioning();
+        config.provisioning->underlay.url =
+                QStringLiteral("https://embedded:credentials@entry.example.test:55426/v1");
+        QVERIFY(!config.canProvisionPeers());
+
+        config.provisioning = makeProvisioning();
+        config.provisioning->underlay.url =
+                QStringLiteral("https://entry.example.test:55426/v1?redirect=elsewhere");
+        QVERIFY(!config.canProvisionPeers());
+
+        config.provisioning = makeProvisioning();
+        config.provisioning->overlay.token = QStringLiteral("short");
+        QVERIFY(!config.canProvisionPeers());
+
+        config.provisioning = makeProvisioning();
+        config.provisioning->overlay.certificateSha256 = QStringLiteral("not-a-pin");
+        QVERIFY(!config.canProvisionPeers());
     }
 };
 
