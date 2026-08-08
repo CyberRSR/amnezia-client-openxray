@@ -201,7 +201,10 @@ ExportController::ExportResult ExportController::generateConnectionConfig(const 
     return result;
 }
 
-ExportController::ExportResult ExportController::generateStoredConnectionConfig(const QString &serverId, int containerIndex)
+ExportController::ExportResult ExportController::generateStoredConnectionConfig(
+        const QString &serverId,
+        int containerIndex,
+        StoredWwgExportMode wwgMode)
 {
     ExportResult result;
 
@@ -235,6 +238,14 @@ ExportController::ExportResult ExportController::generateStoredConnectionConfig(
             return false;
         }
         storedContainer.protocolConfig = uniqueProtocolConfig;
+        if (wwgMode == StoredWwgExportMode::DeviceOnly) {
+            auto *uniqueWwg = storedContainer.getWwgProtocolConfig();
+            if (!uniqueWwg) {
+                result.errorCode = ErrorCode::InternalError;
+                return false;
+            }
+            uniqueWwg->clearProvisioning();
+        }
         return true;
     };
 

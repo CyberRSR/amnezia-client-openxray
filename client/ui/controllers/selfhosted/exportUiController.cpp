@@ -39,6 +39,28 @@ void ExportUiController::generateStoredConnectionConfig(const QString &serverId,
     applyExportResult(result);
 }
 
+void ExportUiController::generateMasterWwgConfig(const QString &serverId, int containerIndex)
+{
+    generateStoredWwgConfig(serverId, containerIndex,
+                            ExportController::StoredWwgExportMode::Master);
+}
+
+void ExportUiController::generateDeviceOnlyWwgConfig(const QString &serverId, int containerIndex)
+{
+    generateStoredWwgConfig(serverId, containerIndex,
+                            ExportController::StoredWwgExportMode::DeviceOnly);
+}
+
+void ExportUiController::generateStoredWwgConfig(
+        const QString &serverId,
+        int containerIndex,
+        ExportController::StoredWwgExportMode mode)
+{
+    clearPreviousConfig();
+    auto result = m_exportController->generateStoredConnectionConfig(serverId, containerIndex, mode);
+    applyExportResult(result);
+}
+
 void ExportUiController::generateOpenVpnConfig(const QString &serverId, const QString &clientName)
 {
     clearPreviousConfig();

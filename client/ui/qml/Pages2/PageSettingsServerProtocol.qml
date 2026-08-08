@@ -22,6 +22,7 @@ PageType {
     property bool isStoredConnectionExportVisible: !ServersUiController.isServerFromApi(ServersUiController.processedServerId)
                                                    && !ContainersModel.isServiceContainer(ServersUiController.processedContainerIndex)
     property bool isWwg: ContainerProps.containerTypeToString(ServersUiController.processedContainerIndex) === "wwg"
+    property bool wwgCanProvisionPeers: root.isWwg && ServersUiController.processedWwgCanProvisionPeers()
 
     Connections {
         target: ExportController
@@ -32,7 +33,7 @@ PageType {
         }
     }
 
-    function exportStoredConnection() {
+    function exportStoredConnection(wwgMaster) {
         var serverId = ServersUiController.processedServerId
         var containerIndex = ServersUiController.processedContainerIndex
         var serverName = ServersUiController.serverName(serverId)
@@ -44,7 +45,13 @@ PageType {
         }
 
         PageController.showBusyIndicator(true)
-        ExportController.generateStoredConnectionConfig(serverId, containerIndex)
+        if (!root.isWwg) {
+            ExportController.generateStoredConnectionConfig(serverId, containerIndex)
+        } else if (wwgMaster) {
+            ExportController.generateMasterWwgConfig(serverId, containerIndex)
+        } else {
+            ExportController.generateDeviceOnlyWwgConfig(serverId, containerIndex)
+        }
         PageController.showBusyIndicator(false)
 
         if (ExportController.config === "") {
@@ -165,21 +172,34 @@ PageType {
 
             width: listView.width
 
+            ParagraphTextType {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                Layout.bottomMargin: 12
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                visible: root.isWwg
+                color: root.wwgCanProvisionPeers
+                       ? AmneziaStyle.color.goldenApricot
+                       : AmneziaStyle.color.paleGray
+                text: root.wwgCanProvisionPeers
+                      ? qsTr("WWG profile type: Master. This profile contains a capability and can create further Master or device-only profiles.")
+                      : qsTr("WWG profile type: Device only. It can connect, but it cannot create or delegate new WWG profiles.")
+                wrapMode: Text.WordWrap
+            }
+
             LabelWithButtonType {
                 id: exportStoredConnectionButton
 
                 Layout.fillWidth: true
 
-                visible: root.isStoredConnectionExportVisible
+                visible: root.isStoredConnectionExportVisible && !root.isWwg
 
-                text: root.isWwg ? qsTr("Create a separate WWG profile") : qsTr("Export saved connection")
-                descriptionText: root.isWwg
-                                 ? qsTr("Creates new keys and peers on both WWG servers. The profile on this device remains unchanged.")
-                                 : ""
+                text: qsTr("Export saved connection")
                 rightImageSource: "qrc:/images/controls/chevron-right.svg"
 
                 clickedFunction: function() {
-                    root.exportStoredConnection()
+                    root.exportStoredConnection(false)
                 }
 
                 MouseArea {
@@ -190,7 +210,59 @@ PageType {
             }
 
             DividerType {
-                visible: root.isStoredConnectionExportVisible
+                visible: exportStoredConnectionButton.visible
+            }
+
+            LabelWithButtonType {
+                id: exportDeviceOnlyWwgButton
+
+                Layout.fillWidth: true
+
+                visible: root.isStoredConnectionExportVisible && root.isWwg && root.wwgCanProvisionPeers
+
+                text: qsTr("Create device-only WWG profile")
+                descriptionText: qsTr("Creates unique keys and peers for one device. The exported file or QR does not contain a capability and cannot create more profiles.")
+                rightImageSource: "qrc:/images/controls/chevron-right.svg"
+
+                clickedFunction: function() {
+                    root.exportStoredConnection(false)
+                }
+
+                MouseArea {
+                    anchors.fill: exportDeviceOnlyWwgButton
+                    cursorShape: Qt.PointingHandCursor
+                    enabled: false
+                }
+            }
+
+            DividerType {
+                visible: exportDeviceOnlyWwgButton.visible
+            }
+
+            LabelWithButtonType {
+                id: exportMasterWwgButton
+
+                Layout.fillWidth: true
+
+                visible: root.isStoredConnectionExportVisible && root.isWwg && root.wwgCanProvisionPeers
+
+                text: qsTr("Create Master WWG profile")
+                descriptionText: qsTr("Creates unique keys and peers and includes the capability. The recipient can create and delegate further WWG profiles.")
+                rightImageSource: "qrc:/images/controls/chevron-right.svg"
+
+                clickedFunction: function() {
+                    root.exportStoredConnection(true)
+                }
+
+                MouseArea {
+                    anchors.fill: exportMasterWwgButton
+                    cursorShape: Qt.PointingHandCursor
+                    enabled: false
+                }
+            }
+
+            DividerType {
+                visible: exportMasterWwgButton.visible
             }
 
             LabelWithButtonType {

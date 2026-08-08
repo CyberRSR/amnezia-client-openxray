@@ -18,6 +18,10 @@ It is deliberately not a remote shell:
   receipt;
 - existing hand-created peers cannot be removed through the API.
 
+The default pool limit is 2048 peers (or the usable subnet capacity when it is
+smaller). Use at least a `/20` allocation when a profile is configured with
+`max_peers: 2048`.
+
 Profiles whose persistent configuration is bind-mounted from the host use
 `config_path`. A legacy container that owns its configuration internally can
 instead use `container_config_path`; the service updates that file through a
@@ -44,6 +48,12 @@ the service.
 5. Install `wwg-peer-provisioner.service`, restrict the selected TCP port in
    the host firewall as appropriate, enable the unit, then test `/healthz` and
    one create/rollback transaction before distributing profiles.
+
+To rotate a capability, replace its stored SHA-256 value and restart the
+service. Existing WireGuard peers are intentionally untouched and continue to
+connect; only future provisioning requests made with the previous capability
+are rejected. Issue the new raw capability only in a trusted Master profile.
+Device-only exports must omit the capability entirely.
 
 The provisioner rewrites the existing configuration inode so the running
 read-only Docker bind mount sees newly appended peers. Keep the configuration,

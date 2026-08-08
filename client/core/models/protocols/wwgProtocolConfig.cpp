@@ -287,6 +287,11 @@ bool WwgProtocolConfig::canProvisionPeers() const
     return provisioning.has_value() && provisioning->isValid();
 }
 
+void WwgProtocolConfig::clearProvisioning()
+{
+    provisioning.reset();
+}
+
 void WwgProtocolConfig::clearClientConfig()
 {
     underlayAwgConfig.clearClientConfig();

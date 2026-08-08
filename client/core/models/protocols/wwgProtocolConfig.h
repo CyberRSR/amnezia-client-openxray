@@ -49,6 +49,7 @@ struct WwgProtocolConfig {
     QString modeName() const;
     QString validationError() const;
     bool canProvisionPeers() const;
+    void clearProvisioning();
     void clearClientConfig();
 
     QJsonObject underlayClientConfigJson() const;

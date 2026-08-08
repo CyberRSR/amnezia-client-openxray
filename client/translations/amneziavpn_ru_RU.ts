@@ -3053,14 +3053,34 @@ Thank you for staying with us!</source>
         <translation>Отменить</translation>
     </message>
     <message>
-        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="175"/>
-        <source>Create a separate WWG profile</source>
-        <translation>Создать отдельный профиль WWG</translation>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="185"/>
+        <source>WWG profile type: Master. This profile contains a capability and can create further Master or device-only profiles.</source>
+        <translation>Тип профиля WWG: Master. Этот профиль содержит capability и может создавать новые Master-профили или профили только для устройства.</translation>
     </message>
     <message>
-        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="177"/>
-        <source>Creates new keys and peers on both WWG servers. The profile on this device remains unchanged.</source>
-        <translation>Создаёт новые ключи и peer на обоих серверах WWG. Профиль на этом устройстве не изменяется.</translation>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="186"/>
+        <source>WWG profile type: Device only. It can connect, but it cannot create or delegate new WWG profiles.</source>
+        <translation>Тип профиля WWG: только для устройства. Он может подключаться, но не может создавать или передавать новые профили WWG.</translation>
+    </message>
+    <message>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="222"/>
+        <source>Create device-only WWG profile</source>
+        <translation>Создать профиль WWG только для устройства</translation>
+    </message>
+    <message>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="223"/>
+        <source>Creates unique keys and peers for one device. The exported file or QR does not contain a capability and cannot create more profiles.</source>
+        <translation>Создаёт уникальные ключи и peer для одного устройства. Экспортированный файл или QR не содержит capability и не может создавать другие профили.</translation>
+    </message>
+    <message>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="248"/>
+        <source>Create Master WWG profile</source>
+        <translation>Создать Master-профиль WWG</translation>
+    </message>
+    <message>
+        <location filename="../ui/qml/Pages2/PageSettingsServerProtocol.qml" line="249"/>
+        <source>Creates unique keys and peers and includes the capability. The recipient can create and delegate further WWG profiles.</source>
+        <translation>Создаёт уникальные ключи и peer и включает capability. Получатель сможет создавать и передавать следующие профили WWG.</translation>
     </message>
 </context>
 <context>

@@ -22,6 +22,8 @@ public slots:
 
     void generateConnectionConfig(const QString &serverId, int containerIndex, const QString &clientName);
     void generateStoredConnectionConfig(const QString &serverId, int containerIndex);
+    void generateMasterWwgConfig(const QString &serverId, int containerIndex);
+    void generateDeviceOnlyWwgConfig(const QString &serverId, int containerIndex);
     void generateOpenVpnConfig(const QString &serverId, const QString &clientName);
     void generateWireGuardConfig(const QString &serverId, const QString &clientName);
     void generateAwgConfig(const QString &serverId, int containerIndex, const QString &clientName);
@@ -55,6 +57,8 @@ private:
     int getQrCodesCount();
     void clearPreviousConfig();
     void applyExportResult(const ExportController::ExportResult &result);
+    void generateStoredWwgConfig(const QString &serverId, int containerIndex,
+                                 ExportController::StoredWwgExportMode mode);
 
     ExportController* m_exportController;
 

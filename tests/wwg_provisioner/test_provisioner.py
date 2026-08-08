@@ -164,6 +164,27 @@ class ProvisioningStoreTest(unittest.TestCase):
         with self.assertRaises(provisioner.PoolExhausted):
             store.create_peer(key(9), key(19), "request-entry-0006")
 
+    def test_allocates_from_large_pool_with_2048_peer_limit(self):
+        large_profile = dataclasses.replace(
+            self.profile,
+            subnet=ipaddress.ip_network("10.90.0.0/20"),
+            max_peers=2048,
+        )
+        store = provisioner.ProvisioningStore(
+            large_profile, b"rollback-secret" * 4, runner=self.runner)
+        created = store.create_peer(key(40), key(41), "request-large-pool-0040")
+        self.assertEqual(created.client_ip, "10.90.0.2/32")
+
+    def test_large_pool_defaults_to_2048_peer_limit(self):
+        profile = provisioner.Profile.from_json({
+            "token_sha256": hashlib.sha256(b"default-large-pool").hexdigest(),
+            "container": "test-awg",
+            "config_path": str(self.config_path),
+            "subnet": "10.90.0.0/20",
+            "server_public_key": self.server_key,
+        })
+        self.assertEqual(profile.max_peers, 2048)
+
     def test_container_owned_config_is_updated_without_secrets_in_argv(self):
         container_profile = dataclasses.replace(
             self.profile,

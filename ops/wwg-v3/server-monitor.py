@@ -52,7 +52,8 @@ def sample(label: str, host: str, env_name: str, container: str, prefix: str) ->
     if password is None:
         return {"server": label, "error": "missing credential environment"}
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
         client.connect(
             host,

@@ -179,7 +179,7 @@ class Profile:
         if not isinstance(subnet, ipaddress.IPv4Network) or subnet.prefixlen > 30:
             raise ValueError("profile subnet must be an IPv4 network with usable hosts")
         server_public_key = _strict_b64_key(str(value["server_public_key"]))
-        max_peers = int(value.get("max_peers", min(128, subnet.num_addresses - 2)))
+        max_peers = int(value.get("max_peers", min(2048, subnet.num_addresses - 2)))
         if max_peers < 1 or max_peers > subnet.num_addresses - 2:
             raise ValueError("profile max_peers is outside the subnet capacity")
         container = str(value["container"]).strip()

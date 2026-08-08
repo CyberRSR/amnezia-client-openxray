@@ -187,6 +187,22 @@ private slots:
                  config.provisioning->overlay.certificateSha256);
     }
 
+    void deviceOnlyCopyDropsProvisioningCapability()
+    {
+        WwgProtocolConfig master = makeWwg(true);
+        master.provisioning = makeProvisioning();
+        QVERIFY(master.canProvisionPeers());
+
+        WwgProtocolConfig deviceOnly = master;
+        deviceOnly.clearProvisioning();
+
+        QVERIFY(!deviceOnly.canProvisionPeers());
+        QVERIFY(!deviceOnly.toJson().contains(configKey::wwgProvisioning));
+        QVERIFY(master.canProvisionPeers());
+        QVERIFY(master.toJson().contains(configKey::wwgProvisioning));
+        QVERIFY2(deviceOnly.isValid(), qPrintable(deviceOnly.validationError()));
+    }
+
     void rejectsUnsafeProvisioningCapability()
     {
         WwgProtocolConfig config = makeWwg(true);

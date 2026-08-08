@@ -5,6 +5,7 @@
 #include "core/utils/protocolEnum.h"
 #include "core/models/protocolConfig.h"
 #include "core/models/containerConfig.h"
+#include "core/models/protocols/wwgProtocolConfig.h"
 
 using namespace amnezia;
 
@@ -424,6 +425,22 @@ bool ServersUiController::isDefaultServerCurrentlyProcessed() const
 bool ServersUiController::isProcessedServerHasWriteAccess() const
 {
     return isServerHasWriteAccess(m_processedServerId);
+}
+
+bool ServersUiController::processedWwgCanProvisionPeers() const
+{
+    if (m_processedServerId.isEmpty() || m_processedContainerIndex < 0) {
+        return false;
+    }
+
+    const DockerContainer container = static_cast<DockerContainer>(m_processedContainerIndex);
+    if (container != DockerContainer::WWG) {
+        return false;
+    }
+
+    const ContainerConfig config = m_serversController->getContainerConfig(m_processedServerId, container);
+    const WwgProtocolConfig *wwg = config.getWwgProtocolConfig();
+    return wwg && wwg->canProvisionPeers();
 }
 
 const ServerDescription &ServersUiController::processedServerDescription() const

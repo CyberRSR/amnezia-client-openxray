@@ -25,6 +25,11 @@ class ExportController : public QObject
     Q_OBJECT
 
 public:
+    enum class StoredWwgExportMode {
+        Master,
+        DeviceOnly,
+    };
+
     struct ExportResult
     {
         ErrorCode errorCode = ErrorCode::NoError;
@@ -39,7 +44,10 @@ public:
 
     ExportResult generateFullAccessConfig(const QString &serverId);
     ExportResult generateConnectionConfig(const QString &serverId, int containerIndex, const QString &clientName);
-    ExportResult generateStoredConnectionConfig(const QString &serverId, int containerIndex);
+    ExportResult generateStoredConnectionConfig(
+            const QString &serverId,
+            int containerIndex,
+            StoredWwgExportMode wwgMode = StoredWwgExportMode::Master);
     ExportResult generateOpenVpnConfig(const QString &serverId, const QString &clientName);
     ExportResult generateWireGuardConfig(const QString &serverId, const QString &clientName);
     ExportResult generateAwgConfig(const QString &serverId, int containerIndex, const QString &clientName);

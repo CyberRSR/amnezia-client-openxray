@@ -94,6 +94,7 @@ public slots:
     
     bool isDefaultServerCurrentlyProcessed() const;
     bool isProcessedServerHasWriteAccess() const;
+    bool processedWwgCanProvisionPeers() const;
     
     bool hasServersFromGatewayApi() const;
     
