@@ -13,6 +13,7 @@ namespace amnezia
             None = 0,
             Awg,
             Awg2,
+            WWG,
             WireGuard,
             OpenVpn,
             Cloak,

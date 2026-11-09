@@ -55,7 +55,7 @@ ListViewType {
                     ServersUiController.processedContainerIndex = containerIndex
 
                     if (isVpnContainer) {
-                        if (isThirdPartyConfig) {
+                        if (isThirdPartyConfig && containerString !== "amnezia-wwg") {
                             InstallController.updateProtocols(ServersUiController.processedServerId, containerIndex)
                             PageController.goToPage(PageEnum.PageProtocolRaw)
                             return

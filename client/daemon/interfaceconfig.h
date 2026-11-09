@@ -7,6 +7,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QJsonObject>
 #include <QString>
 #include <QMap>
 #include "ipaddress.h"
@@ -68,6 +69,10 @@ class InterfaceConfig {
   QString m_maxHandshakeAttempts;
   QString m_randomTrailers;
   QString m_disableCookies;
+
+  // Client configuration of the WWG entry layer, empty for every other
+  // protocol. See WwgUnderlay for the platforms that act on it.
+  QJsonObject m_wwgUnderlay;
 
   QJsonObject toJson() const;
   QString toWgConf(

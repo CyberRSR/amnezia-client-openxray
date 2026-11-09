@@ -25,6 +25,8 @@ Proto ProtocolConfig::type() const
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AwgProtocolConfig>) {
             return Proto::Awg;
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            return Proto::WWG;
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             return Proto::WireGuard;
         } else if constexpr (std::is_same_v<T, OpenVpnProtocolConfig>) {
@@ -58,6 +60,8 @@ QString ProtocolConfig::port() const
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AwgProtocolConfig>) {
             return arg.serverConfig.port;
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            return arg.underlayAwgConfig.serverConfig.port;
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             return arg.serverConfig.port;
         } else if constexpr (std::is_same_v<T, OpenVpnProtocolConfig>) {
@@ -91,6 +95,8 @@ QString ProtocolConfig::transportProto() const
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AwgProtocolConfig>) {
             return arg.serverConfig.transportProto;
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            return arg.underlayAwgConfig.serverConfig.transportProto;
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             return arg.serverConfig.transportProto;
         } else if constexpr (std::is_same_v<T, OpenVpnProtocolConfig>) {
@@ -119,6 +125,7 @@ bool ProtocolConfig::hasClientConfig() const
     return std::visit([](auto&& arg) -> bool {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AwgProtocolConfig> ||
+                      std::is_same_v<T, WwgProtocolConfig> ||
                       std::is_same_v<T, WireGuardProtocolConfig> ||
                       std::is_same_v<T, OpenVpnProtocolConfig> ||
                       std::is_same_v<T, XrayProtocolConfig> ||
@@ -136,6 +143,10 @@ QString ProtocolConfig::clientId() const
         if constexpr (std::is_same_v<T, AwgProtocolConfig>) {
             if (arg.clientConfig.has_value()) {
                 return arg.clientConfig->clientId;
+            }
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            if (arg.underlayAwgConfig.clientConfig.has_value()) {
+                return arg.underlayAwgConfig.clientConfig->clientId;
             }
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             if (arg.clientConfig.has_value()) {
@@ -166,6 +177,13 @@ QJsonObject ProtocolConfig::getClientConfigJson() const
             if (arg.hasClientConfig()) {
                 return arg.clientConfig->toJson();
             }
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            if (arg.hasClientConfig()) {
+                QJsonObject obj;
+                obj[configKey::underlayAwg] = arg.underlayClientConfigJson();
+                obj[configKey::overlayAwg] = arg.overlayClientConfigJson();
+                return obj;
+            }
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             if (arg.hasClientConfig()) {
                 return arg.clientConfig->toJson();
@@ -193,6 +211,11 @@ void ProtocolConfig::setClientConfigJson(const QJsonObject& json)
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AwgProtocolConfig>) {
             arg.setClientConfig(AwgClientConfig::fromJson(json));
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            arg.underlayAwgConfig.setClientConfig(
+                AwgClientConfig::fromJson(json.value(configKey::underlayAwg).toObject()));
+            arg.overlayAwgConfig.setClientConfig(
+                AwgClientConfig::fromJson(json.value(configKey::overlayAwg).toObject()));
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             arg.setClientConfig(WireGuardClientConfig::fromJson(json));
         } else if constexpr (std::is_same_v<T, OpenVpnProtocolConfig>) {
@@ -210,6 +233,7 @@ void ProtocolConfig::clearClientConfig()
     std::visit([](auto&& arg) {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, AwgProtocolConfig> ||
+                      std::is_same_v<T, WwgProtocolConfig> ||
                       std::is_same_v<T, WireGuardProtocolConfig> ||
                       std::is_same_v<T, OpenVpnProtocolConfig> ||
                       std::is_same_v<T, XrayProtocolConfig> ||
@@ -227,6 +251,8 @@ QString ProtocolConfig::nativeConfig() const
             if (arg.clientConfig.has_value()) {
                 return arg.clientConfig->nativeConfig;
             }
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            return arg.nativeConfig();
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             if (arg.clientConfig.has_value()) {
                 return arg.clientConfig->nativeConfig;
@@ -256,6 +282,8 @@ void ProtocolConfig::setNativeConfig(const QString &config)
             if (arg.clientConfig.has_value()) {
                 arg.clientConfig->nativeConfig = config;
             }
+        } else if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            Q_UNUSED(arg);
         } else if constexpr (std::is_same_v<T, WireGuardProtocolConfig>) {
             if (arg.clientConfig.has_value()) {
                 arg.clientConfig->nativeConfig = config;
@@ -280,7 +308,10 @@ bool ProtocolConfig::isThirdPartyConfig() const
 {
     return std::visit([](auto&& arg) -> bool {
         using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, AwgProtocolConfig> ||
+        if constexpr (std::is_same_v<T, WwgProtocolConfig>) {
+            return arg.underlayAwgConfig.serverConfig.isThirdPartyConfig
+                    || arg.overlayAwgConfig.serverConfig.isThirdPartyConfig;
+        } else if constexpr (std::is_same_v<T, AwgProtocolConfig> ||
                       std::is_same_v<T, WireGuardProtocolConfig> ||
                       std::is_same_v<T, OpenVpnProtocolConfig> ||
                       std::is_same_v<T, XrayProtocolConfig> ||
@@ -303,6 +334,8 @@ ProtocolConfig ProtocolConfig::fromJson(const QJsonObject& json, Proto type)
     switch (type) {
     case Proto::Awg:
         return ProtocolConfig{AwgProtocolConfig::fromJson(json)};
+    case Proto::WWG:
+        return ProtocolConfig{WwgProtocolConfig::fromJson(json)};
     case Proto::WireGuard:
         return ProtocolConfig{WireGuardProtocolConfig::fromJson(json)};
     case Proto::OpenVpn:

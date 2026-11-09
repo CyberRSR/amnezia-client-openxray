@@ -14,6 +14,7 @@
 #include "core/utils/protocolEnum.h"
 
 #include "core/models/protocols/awgProtocolConfig.h"
+#include "core/models/protocols/wwgProtocolConfig.h"
 #include "core/models/protocols/wireGuardProtocolConfig.h"
 #include "core/models/protocols/openVpnProtocolConfig.h"
 #include "core/models/protocols/xrayProtocolConfig.h"
@@ -34,6 +35,7 @@ using Proto = ProtocolEnumNS::Proto;
 struct ProtocolConfig {
     using Variant = std::variant<
         AwgProtocolConfig,
+        WwgProtocolConfig,
         WireGuardProtocolConfig,
         OpenVpnProtocolConfig,
         XrayProtocolConfig,

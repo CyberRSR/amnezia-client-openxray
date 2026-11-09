@@ -22,6 +22,7 @@ namespace amnezia
             OpenVpn,
             WireGuard,
             Awg,
+            WWG,
             Ikev2,
             Xray,
             SSXray,

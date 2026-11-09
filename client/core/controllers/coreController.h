@@ -69,6 +69,7 @@
 #include "ui/models/appSplitTunnelingModel.h"
 #include "ui/models/clientManagementModel.h"
 #include "ui/models/protocols/awgConfigModel.h"
+#include "ui/models/protocols/wwgConfigModel.h"
 #include "ui/models/protocols/openvpnConfigModel.h"
 #include "ui/models/protocols/wireguardConfigModel.h"
 #include "ui/models/protocols/xrayConfigModel.h"
@@ -238,6 +239,7 @@ private:
     TorConfigModel* m_torConfigModel;
     WireGuardConfigModel* m_wireGuardConfigModel;
     AwgConfigModel* m_awgConfigModel;
+    WwgConfigModel* m_wwgConfigModel;
 #ifdef Q_OS_WINDOWS
     Ikev2ConfigModel* m_ikev2ConfigModel;
 #endif

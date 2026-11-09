@@ -37,6 +37,7 @@ QHash<int, QByteArray> ProtocolsModel::roleNames() const
     roles[IsClientProtocolExistsRole] = "isClientProtocolExists";
     roles[IsWireGuardRole] = "isWireGuard";
     roles[IsAwgRole] = "isAwg";
+    roles[IsWwgRole] = "isWwg";
     roles[IsOpenVpnRole] = "isOpenVpn";
     roles[IsXrayRole] = "isXray";
     roles[IsSftpRole] = "isSftp";
@@ -69,6 +70,7 @@ QVariant ProtocolsModel::data(const QModelIndex &index, int role) const
     case ProtocolStringRole: return ProtocolUtils::protoToString(proto);
     case IsWireGuardRole: return proto == Proto::WireGuard;
     case IsAwgRole: return proto == Proto::Awg;
+    case IsWwgRole: return proto == Proto::WWG;
     case IsOpenVpnRole: return proto == Proto::OpenVpn;
     case IsXrayRole: return proto == Proto::Xray;
     case IsSftpRole: return proto == Proto::Sftp;
@@ -122,6 +124,7 @@ PageLoader::PageEnum ProtocolsModel::serverProtocolPage(Proto protocol) const
     case Proto::OpenVpn: return PageLoader::PageEnum::PageProtocolOpenVpnSettings;
     case Proto::WireGuard: return PageLoader::PageEnum::PageProtocolWireGuardSettings;
     case Proto::Awg: return PageLoader::PageEnum::PageProtocolAwgSettings;
+    case Proto::WWG: return PageLoader::PageEnum::PageProtocolWwgSettings;
     case Proto::Ikev2: return PageLoader::PageEnum::PageProtocolIKev2Settings;
     case Proto::Xray: return PageLoader::PageEnum::PageProtocolXraySettings;
     

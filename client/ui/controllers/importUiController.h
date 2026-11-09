@@ -21,6 +21,7 @@ public slots:
     void importConfig();
     void clearConfigFileName();
     bool extractConfigFromFile(const QString &fileName);
+    bool extractWwgConfigFromFiles(const QString &underlayAwgFileName, const QString &overlayAwgFileName);
     bool extractConfigFromData(QString data);
     bool extractConfigFromQr(const QByteArray &data);
     QString getConfig();

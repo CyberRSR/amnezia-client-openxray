@@ -68,6 +68,7 @@ namespace PageLoader
         PageProtocolXraySettings,
         PageProtocolWireGuardSettings,
         PageProtocolAwgSettings,
+        PageProtocolWwgSettings,
         PageProtocolIKev2Settings,
         PageProtocolRaw,
 

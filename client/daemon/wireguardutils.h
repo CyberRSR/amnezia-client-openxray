@@ -37,6 +37,14 @@ class WireguardUtils : public QObject {
   virtual bool addInterface(const InterfaceConfig& config) = 0;
   virtual bool deleteInterface() = 0;
 
+  // WWG nests one AmneziaWG tunnel inside another. Platforms that support it
+  // start the entry layer here so the exit peer can be redirected to the local
+  // relay before the tunnel interface is created.
+  virtual bool prepareUnderlayLayer(const InterfaceConfig& config) {
+    Q_UNUSED(config);
+    return true;
+  }
+
   virtual bool updatePeer(const InterfaceConfig& config) = 0;
   virtual bool deletePeer(const InterfaceConfig& config) = 0;
   virtual QList<PeerStatus> getPeerStatus() = 0;

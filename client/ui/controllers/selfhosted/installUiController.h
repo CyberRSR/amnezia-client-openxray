@@ -18,6 +18,7 @@
 #include "core/models/containerConfig.h"
 #include "ui/models/protocolsModel.h"
 #include "ui/models/protocols/awgConfigModel.h"
+#include "ui/models/protocols/wwgConfigModel.h"
 #include "ui/models/protocols/wireguardConfigModel.h"
 #include "ui/models/protocols/openvpnConfigModel.h"
 #include "ui/models/protocols/xrayConfigModel.h"
@@ -43,6 +44,7 @@ public:
                                ProtocolsModel* protocolsModel,
                                UsersController* usersController,
                                AwgConfigModel* awgConfigModel,
+                               WwgConfigModel* wwgConfigModel,
                                WireGuardConfigModel* wireGuardConfigModel,
                                OpenVpnConfigModel* openVpnConfigModel,
                                XrayConfigModel* xrayConfigModel,
@@ -151,6 +153,7 @@ private:
     UsersController* m_usersController;
 
     AwgConfigModel* m_awgConfigModel;
+    WwgConfigModel* m_wwgConfigModel;
     WireGuardConfigModel* m_wireGuardConfigModel;
     OpenVpnConfigModel* m_openVpnConfigModel;
     XrayConfigModel* m_xrayConfigModel;

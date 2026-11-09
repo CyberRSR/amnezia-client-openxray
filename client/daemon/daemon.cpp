@@ -112,6 +112,13 @@ bool Daemon::activate(const InterfaceConfig& config) {
 
   prepareActivation(config);
 
+  // The entry layer owns the only socket that leaves this machine, so it has to
+  // be up before the exit tunnel takes over the default route.
+  if (!config.m_wwgUnderlay.isEmpty() && !wgutils()->prepareUnderlayLayer(config)) {
+    logger.error() << "WWG entry layer creation failed.";
+    return false;
+  }
+
   // Bring up the wireguard interface if not already done.
   if (!wgutils()->interfaceExists()) {
     // Create the interface.
@@ -382,6 +389,11 @@ bool Daemon::parseConfig(const QJsonObject& obj, InterfaceConfig& config) {
 
   if (!parseStringList(obj, "excludedAddresses", config.m_excludedAddresses)) {
     return false;
+  }
+
+  // Optional WWG entry layer; the key matches amnezia::configKey of the client.
+  if (const auto wwgUnderlay = obj.value("awg_underlay_config_data"); wwgUnderlay.isObject()) {
+    config.m_wwgUnderlay = wwgUnderlay.toObject();
   }
   if (!parseStringList(obj, "vpnDisabledApps", config.m_vpnDisabledApps)) {
     return false;

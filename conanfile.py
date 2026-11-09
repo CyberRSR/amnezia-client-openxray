@@ -22,6 +22,7 @@ class AmneziaVPN(ConanFile):
         if has_service:
             if os == "Windows":
                 self.requires("awg-windows/3.1.20260814")
+                self.requires("awg-netstack-windows/3.1.20260814")
                 self.requires("tap-windows6/9.27.0")
                 self.requires("win-split-tunnel/1.2.5.0")
                 self.requires("wintun/0.14.1")

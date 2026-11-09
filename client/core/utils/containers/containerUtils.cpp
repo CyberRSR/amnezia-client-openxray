@@ -69,6 +69,7 @@ QMap<DockerContainer, QString> ContainerUtils::containerHumanNames()
              { DockerContainer::WireGuard, "WireGuard" },
              { DockerContainer::Awg, "AmneziaWG" },
              { DockerContainer::Awg2, "AmneziaWG" },
+             { DockerContainer::WWG, "WWG" },
              { DockerContainer::Xray, "XRay" },
              { DockerContainer::Ipsec, QObject::tr("IPsec") },
              { DockerContainer::SSXray, "Shadowsocks"},
@@ -101,6 +102,8 @@ QMap<DockerContainer, QString> ContainerUtils::containerDescriptions()
              { DockerContainer::Awg2,
                QObject::tr("AmneziaWG is a special protocol from Amnezia based on WireGuard. "
                            "It provides high connection speed and ensures stable operation even in the most challenging network conditions.") },
+             { DockerContainer::WWG,
+               QObject::tr("WWG chains two matching AmneziaWG tunnels in one VPN profile: an entry tunnel and an exit tunnel.") },
              { DockerContainer::Xray,
                QObject::tr("XRay with REALITY masks VPN traffic as web traffic and protects against active probing. "
                            "It is highly resistant to detection and offers high speed.") },
@@ -159,6 +162,9 @@ QMap<DockerContainer, QString> ContainerUtils::containerDetailedDescriptions()
                       "* Minimal settings required\n"
                       "* Undetectable by traffic analysis systems (DPI)\n"
                       "* Operates over UDP protocol") },
+        { DockerContainer::WWG,
+          QObject::tr("WWG creates a chained connection: device -> AmneziaWG entry server -> AmneziaWG exit server -> internet. "
+                      "The entry tunnel runs in a userspace netstack and the exit tunnel owns the single VPN interface.") },
         { DockerContainer::Xray,
           QObject::tr("REALITY is an innovative protocol developed by the creators of XRay, designed specifically to combat high levels of internet censorship. "
                       "REALITY identifies censorship systems during the TLS handshake, "
@@ -222,6 +228,7 @@ Proto ContainerUtils::defaultProtocol(DockerContainer c)
     case DockerContainer::Cloak:
     case DockerContainer::ShadowSocks: return Proto::Unknown;
     case DockerContainer::WireGuard: return Proto::WireGuard;
+    case DockerContainer::WWG: return Proto::WWG;
     case DockerContainer::Awg2: return Proto::Awg;
     case DockerContainer::Awg: return Proto::Awg;
     case DockerContainer::Xray: return Proto::Xray;
@@ -288,6 +295,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
     }
 #elif defined(Q_OS_MAC)
     switch (c) {
+    case DockerContainer::WWG: return false;
     case DockerContainer::WireGuard: return true;
     case DockerContainer::Ipsec: return false;
     default: return true;
@@ -309,6 +317,7 @@ bool ContainerUtils::isSupportedByCurrentPlatform(DockerContainer c)
 
 #elif defined(Q_OS_LINUX)
     switch (c) {
+    case DockerContainer::WWG: return false;
     case DockerContainer::Ipsec: return false;
     default: return true;
     }

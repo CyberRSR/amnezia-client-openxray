@@ -61,6 +61,7 @@ QMap<Proto, QString> ProtocolUtils::protocolHumanNames()
     return { { Proto::OpenVpn, "OpenVPN" },
              { Proto::WireGuard, "WireGuard" },
              { Proto::Awg, "AmneziaWG" },
+             { Proto::WWG, "WWG" },
              { Proto::Ikev2, "IKEv2" },
              { Proto::Xray, "XRay" },
              { Proto::SSXray, "Shadowsocks"},
@@ -89,6 +90,7 @@ ServiceType ProtocolUtils::protocolService(Proto p)
     case Proto::OpenVpn: return ServiceType::Vpn;
     case Proto::WireGuard: return ServiceType::Vpn;
     case Proto::Awg: return ServiceType::Vpn;
+    case Proto::WWG: return ServiceType::Vpn;
     case Proto::Ikev2: return ServiceType::Vpn;
     case Proto::Xray: return ServiceType::Vpn;
 
@@ -107,6 +109,7 @@ int ProtocolUtils::getPortForInstall(Proto p)
 {
     switch (p) {
     case Awg:
+    case WWG:
     case WireGuard:
     case OpenVpn:
     case Socks5Proxy:
@@ -126,6 +129,7 @@ int ProtocolUtils::defaultPort(Proto p)
     case Proto::OpenVpn: return QString(protocols::openvpn::defaultPort).toInt();
     case Proto::WireGuard: return QString(protocols::wireguard::defaultPort).toInt();
     case Proto::Awg: return QString(protocols::awg::defaultPort).toInt();
+    case Proto::WWG: return QString(protocols::awg::defaultPort).toInt();
     case Proto::Xray: return QString(protocols::xray::defaultPort).toInt();
     case Proto::Ikev2: return -1;
 
@@ -147,6 +151,7 @@ bool ProtocolUtils::defaultPortChangeable(Proto p)
     case Proto::OpenVpn: return true;
     case Proto::WireGuard: return true;
     case Proto::Awg: return true;
+    case Proto::WWG: return false;
     case Proto::Ikev2: return false;
     case Proto::Xray: return true;
 
@@ -168,6 +173,7 @@ TransportProto ProtocolUtils::defaultTransportProto(Proto p)
     case Proto::OpenVpn: return TransportProto::Udp;
     case Proto::WireGuard: return TransportProto::Udp;
     case Proto::Awg: return TransportProto::Udp;
+    case Proto::WWG: return TransportProto::Udp;
     case Proto::Ikev2: return TransportProto::Udp;
     case Proto::Xray: return TransportProto::Tcp;
     case Proto::SSXray: return TransportProto::Tcp;
@@ -191,6 +197,7 @@ bool ProtocolUtils::defaultTransportProtoChangeable(Proto p)
     case Proto::OpenVpn: return true;
     case Proto::WireGuard: return false;
     case Proto::Awg: return false;
+    case Proto::WWG: return false;
     case Proto::Ikev2: return false;
     case Proto::Xray: return false;
 

@@ -12,6 +12,7 @@
 
 #include <QFileInfo>
 
+#include "core/utils/networkUtilities.h"
 #include "leakdetector.h"
 #include "logger.h"
 #include "windowsfirewall.h"
@@ -41,10 +42,13 @@ WireguardUtilsWindows::WireguardUtilsWindows(QObject* parent, WindowsFirewall* f
 
   connect(&m_tunnel, &WindowsTunnelService::backendFailure, this,
           [&] { emit backendFailure(); });
+  connect(&m_wwgUnderlay, &WwgUnderlay::healthLost, this,
+          [&] { emit backendFailure(); });
 }
 
 WireguardUtilsWindows::~WireguardUtilsWindows() {
   MZ_COUNT_DTOR(WireguardUtilsWindows);
+  m_wwgUnderlay.stop();
   logger.debug() << "WireguardUtilsWindows destroyed.";
 }
 
@@ -86,6 +90,40 @@ QList<WireguardUtils::PeerStatus> WireguardUtilsWindows::getPeerStatus() {
   }
 
   return peerList;
+}
+
+bool WireguardUtilsWindows::prepareUnderlayLayer(const InterfaceConfig& config) {
+  const QString entryHost =
+      config.m_wwgUnderlay.value(QLatin1String("hostName")).toString();
+  if (entryHost.isEmpty()) {
+    logger.error() << "WWG entry endpoint is missing";
+    return false;
+  }
+
+  QHostAddress entryAddress(entryHost);
+  if (entryAddress.isNull()) {
+    entryAddress = QHostAddress(NetworkUtilities::getIPAddress(entryHost));
+  }
+
+  WwgUnderlay::Request request;
+  request.configData = config.m_wwgUnderlay;
+  request.relayHost = config.m_serverIpv4AddrIn;
+  request.relayPort = static_cast<quint16>(config.m_serverPort);
+  request.bindInterfaceIndex =
+      static_cast<quint32>(NetworkUtilities::AdapterIndexTo(entryAddress));
+  request.overlayMtu = config.m_deviceMTU;
+  request.overlayS4 = config.m_transportPacketJunkSize.toInt();
+  request.overlayIsAwgV3 = !config.m_headerProtectionKey.isEmpty();
+
+  logger.debug() << "Starting WWG entry layer to" << entryAddress.toString()
+                 << "via interface" << request.bindInterfaceIndex;
+
+  QString error;
+  if (!m_wwgUnderlay.start(request, &error)) {
+    logger.error() << "WWG entry layer failed:" << error;
+    return false;
+  }
+  return true;
 }
 
 bool WireguardUtilsWindows::addInterface(const InterfaceConfig& config) {
@@ -145,6 +183,7 @@ bool WireguardUtilsWindows::deleteInterface() {
 
   m_firewall->disableKillSwitch();
   m_tunnel.stop();
+  m_wwgUnderlay.stop();
   return true;
 }
 
@@ -169,7 +208,11 @@ bool WireguardUtilsWindows::updatePeer(const InterfaceConfig& config) {
   if (!config.m_serverPskKey.isNull()) {
     out << "preshared_key=" << QString(pskKey.toHex()) << "\n";
   }
-  if (!config.m_serverIpv4AddrIn.isNull()) {
+  // The entry layer carries every exit datagram, so the peer endpoint of this
+  // interface is the loopback relay of the entry netstack, not the server.
+  if (m_wwgUnderlay.isActive()) {
+    out << "endpoint=127.0.0.1:";
+  } else if (!config.m_serverIpv4AddrIn.isNull()) {
     out << "endpoint=" << config.m_serverIpv4AddrIn << ":";
   } else if (!config.m_serverIpv6AddrIn.isNull()) {
     out << "endpoint=[" << config.m_serverIpv6AddrIn << "]:";
@@ -177,7 +220,9 @@ bool WireguardUtilsWindows::updatePeer(const InterfaceConfig& config) {
     logger.warning() << "Failed to create peer with no endpoints";
     return false;
   }
-  out << config.m_serverPort << "\n";
+  out << (m_wwgUnderlay.isActive() ? QString::number(m_wwgUnderlay.relayPort())
+                                   : QString::number(config.m_serverPort))
+      << "\n";
 
   out << "replace_allowed_ips=true\n";
   if (!config.m_persistentKeepalive.isEmpty()) {
@@ -188,7 +233,10 @@ bool WireguardUtilsWindows::updatePeer(const InterfaceConfig& config) {
   }
 
   // Exclude the server address, except for multihop exit servers.
-  if (m_routeMonitor && config.m_hopType != InterfaceConfig::MultiHopExit) {
+  // For WWG the exit address stays inside the tunnel: only the entry endpoint
+  // is excluded, and the client already put it in excludedAddresses.
+  if (m_routeMonitor && !m_wwgUnderlay.isActive() &&
+      config.m_hopType != InterfaceConfig::MultiHopExit) {
     m_routeMonitor->addExclusionRoute(IPAddress(config.m_serverIpv4AddrIn));
     m_routeMonitor->addExclusionRoute(IPAddress(config.m_serverIpv6AddrIn));
   }

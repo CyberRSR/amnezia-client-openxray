@@ -317,6 +317,13 @@ namespace amnezia
 
         }
 
+        namespace wwg
+        {
+            // The entry netstack carries whole exit AWG datagrams, so the entry MTU
+            // must also fit the exit transport, IPv6 and UDP headers below 1500.
+            constexpr char defaultV3UnderlayMtu[] = "1380";
+        }
+
         namespace socks5Proxy
         {
             constexpr char defaultUserName[] = "proxy_user";

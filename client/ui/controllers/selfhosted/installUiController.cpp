@@ -43,6 +43,7 @@ InstallUiController::InstallUiController(InstallController *installController,
                                          ProtocolsModel *protocolsModel,
                                          UsersController *usersController,
                                          AwgConfigModel *awgConfigModel,
+                                         WwgConfigModel *wwgConfigModel,
                                          WireGuardConfigModel *wireGuardConfigModel,
                                          OpenVpnConfigModel *openVpnConfigModel,
                                          XrayConfigModel *xrayConfigModel,
@@ -64,6 +65,7 @@ InstallUiController::InstallUiController(InstallController *installController,
       m_protocolModel(protocolsModel),
       m_usersController(usersController),
       m_awgConfigModel(awgConfigModel),
+      m_wwgConfigModel(wwgConfigModel),
       m_wireGuardConfigModel(wireGuardConfigModel),
       m_openVpnConfigModel(openVpnConfigModel),
       m_xrayConfigModel(xrayConfigModel),
@@ -230,6 +232,11 @@ bool InstallUiController::buildContainerConfigFromModel(int containerIndex, int 
     switch (protocolType) {
     case Proto::Awg: {
         containerConfig.protocolConfig = m_awgConfigModel->getProtocolConfig();
+        break;
+    }
+    case Proto::WWG: {
+        containerConfig.protocolConfig =
+                WwgProtocolConfig::fromJson(m_wwgConfigModel->getConfig().value(configKey::wwg).toObject());
         break;
     }
     case Proto::WireGuard: {
@@ -749,6 +756,7 @@ void InstallUiController::updateProtocolConfigModel(const QString &serverId, int
 
     switch (protocolType) {
     case Proto::Awg: updateIfPresent(m_awgConfigModel, containerConfig.getAwgProtocolConfig()); break;
+    case Proto::WWG: updateIfPresent(m_wwgConfigModel, containerConfig.getWwgProtocolConfig()); break;
     case Proto::WireGuard: updateIfPresent(m_wireGuardConfigModel, containerConfig.getWireGuardProtocolConfig()); break;
     case Proto::OpenVpn: updateIfPresent(m_openVpnConfigModel, containerConfig.getOpenVpnProtocolConfig()); break;
     case Proto::Xray:

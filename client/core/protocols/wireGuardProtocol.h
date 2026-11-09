@@ -25,8 +25,7 @@ public:
     ErrorCode startMzImpl();
     ErrorCode stopMzImpl();
 
-private:
-
+protected:
     QScopedPointer<ControllerImpl> m_impl;
 };
 

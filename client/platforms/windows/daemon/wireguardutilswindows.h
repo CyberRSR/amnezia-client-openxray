@@ -14,6 +14,7 @@
 #include "daemon/wireguardutils.h"
 #include "windowsroutemonitor.h"
 #include "windowstunnelservice.h"
+#include "wwgunderlay.h"
 
 class WindowsFirewall;
 class WindowsRouteMonitor;
@@ -33,6 +34,7 @@ class WireguardUtilsWindows final : public WireguardUtils {
   static const QString s_interfaceName() { return "AmneziaVPN"; }
   bool addInterface(const InterfaceConfig& config) override;
   bool deleteInterface() override;
+  bool prepareUnderlayLayer(const InterfaceConfig& config) override;
 
   bool updatePeer(const InterfaceConfig& config) override;
   bool deletePeer(const InterfaceConfig& config) override;
@@ -57,6 +59,7 @@ class WireguardUtilsWindows final : public WireguardUtils {
   WindowsTunnelService m_tunnel;
   QPointer<WindowsRouteMonitor> m_routeMonitor;
   QPointer<WindowsFirewall> m_firewall;
+  WwgUnderlay m_wwgUnderlay;
 };
 
 #endif  // WIREGUARDUTILSWINDOWS_H

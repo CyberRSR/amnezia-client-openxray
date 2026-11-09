@@ -133,6 +133,8 @@ void LocalSocketController::activate(const QJsonObject &rawConfig) {
   QJsonArray allowedDns = rawConfig.value(amnezia::configKey::allowedDnsServers).toArray();
 
   QJsonObject wgConfig = rawConfig.value(protocolName + "_config_data").toObject();
+  const QJsonObject wwgUnderlay =
+      rawConfig.value(amnezia::configKey::awgUnderlayConfigData).toObject();
 
   QJsonObject json;
   json.insert("type", "activate");
@@ -236,7 +238,14 @@ void LocalSocketController::activate(const QJsonObject &rawConfig) {
   json.insert("allowedIPAddressRanges", jsAllowedIPAddesses);
 
   QJsonArray jsExcludedAddresses;
-  jsExcludedAddresses.append(wgConfig.value(amnezia::configKey::hostName));
+  // WWG reaches the exit server through the entry tunnel, so the entry endpoint
+  // is the only address allowed outside it.  The exit address is often also the
+  // DNS server and must stay inside the tunnel.
+  if (!wwgUnderlay.isEmpty()) {
+    jsExcludedAddresses.append(wwgUnderlay.value(amnezia::configKey::hostName));
+  } else {
+    jsExcludedAddresses.append(wgConfig.value(amnezia::configKey::hostName));
+  }
   if (splitTunnelType == 2) {
     for (auto v : splitTunnelSites) {
           QString ipRange = v.toString();
@@ -259,6 +268,10 @@ void LocalSocketController::activate(const QJsonObject &rawConfig) {
     if (value.isString() && !value.toString().isEmpty()) {
       json.insert(key, value);
     }
+  }
+
+  if (!wwgUnderlay.isEmpty()) {
+    json.insert(amnezia::configKey::awgUnderlayConfigData, wwgUnderlay);
   }
 
   write(json);

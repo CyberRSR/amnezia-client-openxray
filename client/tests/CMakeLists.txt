@@ -463,6 +463,7 @@ endif()
 if(NOT ANDROID)
     add_subdirectory(selfHostedAdmin)
     add_subdirectory(api)
+    add_subdirectory(wwg)
 endif()
 
 enable_testing()

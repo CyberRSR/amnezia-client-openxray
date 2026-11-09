@@ -218,6 +218,39 @@ PageType {
                 Layout.rightMargin: 16
                 Layout.leftMargin: 16
 
+                text: qsTr("WWG (AmneziaWG v2/v3 + AmneziaWG v2/v3)")
+                subtitle: qsTr("Create one WWG profile from entry and exit configs of the same AmneziaWG mode. " +
+                               "Use a separate pair for every device.")
+
+                icon.source: "qrc:/images/controls/file-cog-2.svg"
+
+                enabled: !root.isRestoringBackup
+
+                onClicked: {
+                    var underlayFileName = SystemController.getFileName(qsTr("Open entry AmneziaWG v2 or v3 config"),
+                                                                        qsTr("AmneziaWG config (*.conf)"))
+                    if (underlayFileName === "") {
+                        return
+                    }
+
+                    var overlayFileName = SystemController.getFileName(qsTr("Open exit AmneziaWG v2 or v3 config"),
+                                                                       qsTr("AmneziaWG config (*.conf)"))
+                    if (overlayFileName === "") {
+                        return
+                    }
+
+                    if (ImportController.extractWwgConfigFromFiles(underlayFileName, overlayFileName)) {
+                        PageController.goToPage(PageEnum.PageSetupWizardViewConfig)
+                    }
+                }
+            }
+
+            BasicCardType {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                Layout.rightMargin: 16
+                Layout.leftMargin: 16
+
                 visible: SettingsController.isCameraPresent()
 
                 text: qsTr("QR code")

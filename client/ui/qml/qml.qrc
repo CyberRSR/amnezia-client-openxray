@@ -113,6 +113,7 @@
         <file>Pages2/PageProtocolOpenVpnSettings.qml</file>
         <file>Pages2/PageProtocolRaw.qml</file>
         <file>Pages2/PageProtocolWireGuardSettings.qml</file>
+        <file>Pages2/PageProtocolWwgSettings.qml</file>
         <file>Pages2/PageProtocolXraySettings.qml</file>
 
         <file>Pages2/PageProtocolXraySnapshots.qml</file>
